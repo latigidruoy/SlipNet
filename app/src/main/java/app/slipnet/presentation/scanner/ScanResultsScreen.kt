@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudOff
@@ -327,7 +328,9 @@ fun ScanResultsScreen(
 
             // Results
             val filteredResults = uiState.scannerState.results.filter {
-                it.status == ResolverStatus.WORKING &&
+                (it.status == ResolverStatus.WORKING ||
+                    it.status == ResolverStatus.TUNNEL_VERIFIED ||
+                    it.status == ResolverStatus.TUNNEL_FAILED) &&
                     (it.tunnelTestResult?.score ?: 0) >= scoreFilter.minScore
             }
 
@@ -1016,7 +1019,9 @@ private fun ResultsResolverItem(
     onToggleSelection: (() -> Unit)? = null
 ) {
     val isDisabled = isLimitReached && !isSelected
-    val canInteract = showSelection && result.status == ResolverStatus.WORKING && onToggleSelection != null && !isDisabled
+    val canInteract = showSelection &&
+        (result.status == ResolverStatus.WORKING || result.status == ResolverStatus.TUNNEL_VERIFIED) &&
+        onToggleSelection != null && !isDisabled
 
     val backgroundColor by animateColorAsState(
         targetValue = when {
@@ -1114,7 +1119,9 @@ private fun ResultsResolverItem(
                 }
             }
 
-            if (showSelection && result.status == ResolverStatus.WORKING && onToggleSelection != null) {
+            if (showSelection &&
+                (result.status == ResolverStatus.WORKING || result.status == ResolverStatus.TUNNEL_VERIFIED) &&
+                onToggleSelection != null) {
                 Checkbox(
                     checked = isSelected,
                     onCheckedChange = { if (!isDisabled) onToggleSelection() },
@@ -1179,6 +1186,16 @@ private fun ResultsStatusIcon(status: ResolverStatus) {
             WorkingGreen,
             WorkingGreen.copy(alpha = 0.1f)
         )
+        ResolverStatus.TUNNEL_VERIFIED -> Triple(
+            Icons.Default.VerifiedUser,
+            WorkingGreen,
+            WorkingGreen.copy(alpha = 0.1f)
+        )
+        ResolverStatus.TUNNEL_FAILED -> Triple(
+            Icons.Outlined.Error,
+            CensoredOrange,
+            CensoredOrange.copy(alpha = 0.1f)
+        )
         ResolverStatus.CENSORED -> Triple(
             Icons.Default.Warning,
             CensoredOrange,
@@ -1226,6 +1243,8 @@ private fun ResultsStatusLabel(status: ResolverStatus) {
         ResolverStatus.PENDING -> "Pending" to MaterialTheme.colorScheme.outline
         ResolverStatus.SCANNING -> "Scanning..." to MaterialTheme.colorScheme.primary
         ResolverStatus.WORKING -> "Working" to WorkingGreen
+        ResolverStatus.TUNNEL_VERIFIED -> "Verified" to WorkingGreen
+        ResolverStatus.TUNNEL_FAILED -> "Tunnel Failed" to CensoredOrange
         ResolverStatus.CENSORED -> "Censored" to CensoredOrange
         ResolverStatus.TIMEOUT -> "Timeout" to TimeoutGray
         ResolverStatus.ERROR -> "Error" to ErrorRed

@@ -94,6 +94,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.FlowRow
 import androidx.hilt.navigation.compose.hiltViewModel
+import app.slipnet.domain.model.ResolverStatus
 import app.slipnet.tunnel.GeoBypassCountry
 
 private val WorkingGreen = Color(0xFF4CAF50)
@@ -204,10 +205,14 @@ fun DnsScannerScreen(
             HeroCard()
 
             // Start Scan + View Results
+            val tunnelVerifiedCount = uiState.scannerState.results.count {
+                it.status == ResolverStatus.TUNNEL_VERIFIED
+            }
             ActionSection(
                 canStartScan = uiState.resolverList.isNotEmpty() && !uiState.scannerState.isScanning,
                 hasResults = uiState.scannerState.results.isNotEmpty(),
                 workingCount = uiState.scannerState.workingCount,
+                tunnelVerifiedCount = tunnelVerifiedCount,
                 onStartScan = { viewModel.startScan() },
                 onViewResults = onNavigateToResults
             )
@@ -318,6 +323,7 @@ private fun ActionSection(
     canStartScan: Boolean,
     hasResults: Boolean,
     workingCount: Int,
+    tunnelVerifiedCount: Int = 0,
     onStartScan: () -> Unit,
     onViewResults: () -> Unit
 ) {
@@ -365,7 +371,10 @@ private fun ActionSection(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("View Results ($workingCount working)")
+                Text(
+                    if (tunnelVerifiedCount > 0) "View Results ($tunnelVerifiedCount verified)"
+                    else "View Results ($workingCount working)"
+                )
             }
         }
     }

@@ -6,10 +6,12 @@ package app.slipnet.domain.model
 enum class ResolverStatus {
     PENDING,
     SCANNING,
-    WORKING,      // Resolver responds correctly
-    CENSORED,     // Resolver hijacks to 10.x.x.x or similar
-    TIMEOUT,      // Resolver did not respond in time
-    ERROR         // Resolver had an error
+    WORKING,           // Resolver responds correctly to DNS queries
+    TUNNEL_VERIFIED,   // Passed DNS scan AND E2E tunnel test (truly active)
+    TUNNEL_FAILED,     // Passed DNS scan but failed E2E tunnel test
+    CENSORED,          // Resolver hijacks to 10.x.x.x or similar
+    TIMEOUT,           // Resolver did not respond in time
+    ERROR              // Resolver had an error
 }
 
 /**
