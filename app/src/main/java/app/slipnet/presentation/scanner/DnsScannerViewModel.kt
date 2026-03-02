@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import app.slipnet.domain.model.DnsTransport
 import app.slipnet.domain.model.DnsTunnelTestResult
 import app.slipnet.domain.model.E2eScannerState
+import app.slipnet.domain.model.E2eTestResult
 import app.slipnet.domain.model.ResolverScanResult
 import app.slipnet.domain.model.ResolverStatus
 import app.slipnet.domain.model.ScannerState
@@ -61,7 +62,7 @@ data class DnsScannerUiState(
 ) {
     companion object {
         const val MAX_SELECTED_RESOLVERS = 8
-        private val E2E_SUPPORTED_TUNNEL_TYPES = setOf(
+        internal val E2E_SUPPORTED_TUNNEL_TYPES = setOf(
             TunnelType.SLIPSTREAM, TunnelType.SLIPSTREAM_SSH,
             TunnelType.DNSTT, TunnelType.DNSTT_SSH
         )
@@ -922,7 +923,7 @@ class DnsScannerViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             e2eScannerState = E2eScannerState(
                 isRunning = true,
-                totalCount = allWorking.size,
+                totalCount = allEligible.size,
                 testedCount = startTestedCount,
                 passedCount = startPassedCount
             )
