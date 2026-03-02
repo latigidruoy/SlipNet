@@ -12,12 +12,6 @@ Join our Telegram channel for updates, support, and discussions:
 
 [![Telegram](https://img.shields.io/badge/Telegram-@SlipNet__app-blue?logo=telegram)](https://t.me/SlipNet_app)
 
-## Donate
-
-If you want to support development:
-
-- **USDT (BEP-20)**: `0xd4140058389572D50dC8716e768e687C050Dd5C9`
-
 ## Tunnel Types
 
 SlipNet supports multiple tunnel types with optional SSH chaining:

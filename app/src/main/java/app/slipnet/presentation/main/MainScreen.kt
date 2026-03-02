@@ -115,7 +115,6 @@ import app.slipnet.domain.model.ConnectionState
 import app.slipnet.domain.model.PingResult
 import app.slipnet.domain.model.ServerProfile
 import app.slipnet.domain.model.TrafficStats
-import app.slipnet.presentation.common.components.AboutDialogContent
 import app.slipnet.presentation.common.components.ProfileListItem
 import app.slipnet.presentation.common.components.QrCodeDialog
 import app.slipnet.presentation.common.icons.TorIcon
@@ -972,19 +971,6 @@ fun MainScreen(
         )
     }
 
-    // First launch About dialog
-    if (uiState.showFirstLaunchAbout) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissFirstLaunchAbout() },
-            title = { Text("Welcome to SlipNet") },
-            text = { AboutDialogContent() },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissFirstLaunchAbout() }) {
-                    Text("Get Started")
-                }
-            }
-        )
-    }
 }
 
 // ── ConnectionStatusStrip ───────────────────────────────────────────────
