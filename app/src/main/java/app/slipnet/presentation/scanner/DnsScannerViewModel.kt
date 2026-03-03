@@ -771,9 +771,6 @@ class DnsScannerViewModel @Inject constructor(
                     var passedCount = 0
 
                     for (resolver in e2eChannel) {
-                        // Early termination: stop after finding enough verified resolvers
-                        if (passedCount >= DnsScannerUiState.MAX_SELECTED_RESOLVERS) break
-
                         scannerRepository.testResolversE2e(
                             resolvers = listOf(resolver.host to resolver.port),
                             profile = profile,
