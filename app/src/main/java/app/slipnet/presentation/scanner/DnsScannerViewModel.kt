@@ -742,14 +742,12 @@ class DnsScannerViewModel @Inject constructor(
             }
 
             var e2eCandidateCount = 0
-            val maxE2eCandidates = 30
 
             // Queue any existing WORKING+compatible resolvers from a resumed scan
             if (e2eChannel != null) {
                 for ((_, result) in existingResults) {
                     if (result.status == ResolverStatus.WORKING &&
-                        result.tunnelTestResult?.isCompatible == true &&
-                        e2eCandidateCount < maxE2eCandidates
+                        result.tunnelTestResult?.isCompatible == true
                     ) {
                         e2eCandidateCount++
                         e2eChannel.trySend(result)
@@ -847,8 +845,7 @@ class DnsScannerViewModel @Inject constructor(
 
                     // Queue compatible (4/4) resolvers for interleaved E2E testing
                     if (e2eChannel != null &&
-                        result.tunnelTestResult?.isCompatible == true &&
-                        e2eCandidateCount < maxE2eCandidates
+                        result.tunnelTestResult?.isCompatible == true
                     ) {
                         e2eCandidateCount++
                         _uiState.value = _uiState.value.copy(
