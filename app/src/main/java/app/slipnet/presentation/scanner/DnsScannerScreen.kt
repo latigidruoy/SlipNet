@@ -371,10 +371,7 @@ private fun ActionSection(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    if (tunnelVerifiedCount > 0) "View Results ($tunnelVerifiedCount verified)"
-                    else "View Results ($workingCount working)"
-                )
+                Text("View Results ($tunnelVerifiedCount working)")
             }
         }
     }

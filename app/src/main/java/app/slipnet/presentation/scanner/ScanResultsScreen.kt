@@ -48,7 +48,6 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudOff
@@ -210,7 +209,9 @@ fun ScanResultsScreen(
                     progress = uiState.scannerState.progress,
                     totalCount = uiState.scannerState.totalCount,
                     scannedCount = uiState.scannerState.scannedCount,
-                    workingCount = uiState.scannerState.workingCount,
+                    workingCount = uiState.scannerState.results.count {
+                        it.status == ResolverStatus.TUNNEL_VERIFIED
+                    },
                     onStopScan = { viewModel.stopScan() },
                     onResumeScan = { viewModel.resumeScan() },
                     canRunE2e = uiState.canRunE2e,
@@ -235,7 +236,8 @@ fun ScanResultsScreen(
             // VPN active warning for E2E
             AnimatedVisibility(
                 visible = uiState.isVpnActive && uiState.profileId != null &&
-                        !uiState.scannerState.isScanning && uiState.scannerState.workingCount > 0,
+                        !uiState.scannerState.isScanning &&
+                        uiState.scannerState.results.any { it.status == ResolverStatus.TUNNEL_VERIFIED },
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
@@ -328,8 +330,7 @@ fun ScanResultsScreen(
 
             // Results
             val filteredResults = uiState.scannerState.results.filter {
-                (it.status == ResolverStatus.WORKING ||
-                    it.status == ResolverStatus.TUNNEL_VERIFIED ||
+                (it.status == ResolverStatus.TUNNEL_VERIFIED ||
                     it.status == ResolverStatus.TUNNEL_FAILED) &&
                     (it.tunnelTestResult?.score ?: 0) >= scoreFilter.minScore
             }
@@ -1020,7 +1021,7 @@ private fun ResultsResolverItem(
 ) {
     val isDisabled = isLimitReached && !isSelected
     val canInteract = showSelection &&
-        (result.status == ResolverStatus.WORKING || result.status == ResolverStatus.TUNNEL_VERIFIED) &&
+        result.status == ResolverStatus.TUNNEL_VERIFIED &&
         onToggleSelection != null && !isDisabled
 
     val backgroundColor by animateColorAsState(
@@ -1120,7 +1121,7 @@ private fun ResultsResolverItem(
             }
 
             if (showSelection &&
-                (result.status == ResolverStatus.WORKING || result.status == ResolverStatus.TUNNEL_VERIFIED) &&
+                result.status == ResolverStatus.TUNNEL_VERIFIED &&
                 onToggleSelection != null) {
                 Checkbox(
                     checked = isSelected,
@@ -1187,7 +1188,7 @@ private fun ResultsStatusIcon(status: ResolverStatus) {
             WorkingGreen.copy(alpha = 0.1f)
         )
         ResolverStatus.TUNNEL_VERIFIED -> Triple(
-            Icons.Default.VerifiedUser,
+            Icons.Default.CheckCircle,
             WorkingGreen,
             WorkingGreen.copy(alpha = 0.1f)
         )
@@ -1243,7 +1244,7 @@ private fun ResultsStatusLabel(status: ResolverStatus) {
         ResolverStatus.PENDING -> "Pending" to MaterialTheme.colorScheme.outline
         ResolverStatus.SCANNING -> "Scanning..." to MaterialTheme.colorScheme.primary
         ResolverStatus.WORKING -> "Working" to WorkingGreen
-        ResolverStatus.TUNNEL_VERIFIED -> "Verified" to WorkingGreen
+        ResolverStatus.TUNNEL_VERIFIED -> "Working" to WorkingGreen
         ResolverStatus.TUNNEL_FAILED -> "Tunnel Failed" to CensoredOrange
         ResolverStatus.CENSORED -> "Censored" to CensoredOrange
         ResolverStatus.TIMEOUT -> "Timeout" to TimeoutGray
