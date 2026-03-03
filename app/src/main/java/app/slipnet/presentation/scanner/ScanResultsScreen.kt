@@ -42,10 +42,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
@@ -104,7 +102,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavBackStackEntry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import app.slipnet.domain.model.E2eScannerState
 import app.slipnet.domain.model.E2eTestResult
 import app.slipnet.domain.model.ResolverScanResult
 import app.slipnet.domain.model.ResolverStatus
@@ -128,13 +125,18 @@ fun ScanResultsScreen(
     val canApply = fromProfile
     val snackbarHostState = remember { SnackbarHostState() }
     val navBarPadding = WindowInsets.navigationBars.asPaddingValues()
-    var sortOption by remember { mutableStateOf(SortOption.NONE) }
+    var sortOption by remember { mutableStateOf(SortOption.E2E_SPEED) }
     var scoreFilter by remember { mutableStateOf(ScoreFilter.ALL) }
     var proxyWarningDismissed by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("scanner_ui", Context.MODE_PRIVATE) }
     var showSortFilter by remember { mutableStateOf(prefs.getBoolean("show_sort_filter", true)) }
     val scope = rememberCoroutineScope()
+
+    val verifiedCount = uiState.scannerState.results.count {
+        it.status == ResolverStatus.TUNNEL_VERIFIED
+    }
+    val isActive = uiState.scannerState.isScanning || uiState.e2eScannerState.isRunning
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
@@ -153,13 +155,6 @@ fun ScanResultsScreen(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold
                         )
-                        if (uiState.scannerState.isScanning) {
-                            Text(
-                                text = "Scanning ${uiState.scannerState.scannedCount} of ${uiState.scannerState.totalCount}...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
                     }
                 },
                 navigationIcon = {
@@ -174,13 +169,28 @@ fun ScanResultsScreen(
                 },
                 actions = {
                     if (canApply && uiState.selectedResolvers.isNotEmpty()) {
-                        TextButton(
+                        Button(
                             onClick = {
                                 viewModel.saveRecentDns()
                                 onResolversSelected(viewModel.getSelectedResolversString())
-                            }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = WorkingGreen
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                         ) {
-                            Text("Apply", fontWeight = FontWeight.SemiBold)
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Apply (${uiState.selectedResolvers.size})",
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.labelLarge
+                            )
                         }
                     }
                 },
@@ -202,36 +212,28 @@ fun ScanResultsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Progress
-            if (uiState.scannerState.isScanning || uiState.scannerState.scannedCount > 0) {
-                ResultsProgressSection(
-                    isScanning = uiState.scannerState.isScanning,
-                    progress = uiState.scannerState.progress,
-                    totalCount = uiState.scannerState.totalCount,
-                    scannedCount = uiState.scannerState.scannedCount,
-                    workingCount = uiState.scannerState.results.count {
-                        it.status == ResolverStatus.TUNNEL_VERIFIED
-                    },
-                    onStopScan = { viewModel.stopScan() },
-                    onResumeScan = { viewModel.resumeScan() },
-                    canRunE2e = uiState.canRunE2e,
-                    canResumeE2e = uiState.canResumeE2e,
-                    e2eComplete = uiState.e2eComplete,
-                    isE2eRunning = uiState.e2eScannerState.isRunning,
-                    onStartE2eFresh = { viewModel.startE2eTest(fresh = true) },
-                    onResumeE2e = { viewModel.startE2eTest(fresh = false) },
-                    onStopE2e = { viewModel.stopE2eTest() }
-                )
-            }
-
-            // E2E progress
-            AnimatedVisibility(
-                visible = uiState.e2eScannerState.isRunning || uiState.e2eScannerState.testedCount > 0,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                E2eProgressSection(e2eScannerState = uiState.e2eScannerState)
-            }
+            // Unified progress section
+            UnifiedProgressSection(
+                verifiedCount = verifiedCount,
+                selectedCount = uiState.selectedResolvers.size,
+                maxSelected = DnsScannerUiState.MAX_SELECTED_RESOLVERS,
+                isScanning = uiState.scannerState.isScanning,
+                isE2eRunning = uiState.e2eScannerState.isRunning,
+                scanProgress = uiState.scannerState.progress,
+                scannedCount = uiState.scannerState.scannedCount,
+                totalCount = uiState.scannerState.totalCount,
+                e2eTestedCount = uiState.e2eScannerState.testedCount,
+                e2eTotalCount = uiState.e2eScannerState.totalCount,
+                e2eCurrentResolver = uiState.e2eScannerState.currentResolver,
+                e2eCurrentPhase = uiState.e2eScannerState.currentPhase,
+                canApply = canApply,
+                canRetest = !isActive && uiState.e2eComplete,
+                onStop = {
+                    viewModel.stopScan()
+                    viewModel.stopE2eTest()
+                },
+                onRetest = { viewModel.startE2eTest(fresh = true) }
+            )
 
             // VPN active warning for E2E
             AnimatedVisibility(
@@ -319,15 +321,6 @@ fun ScanResultsScreen(
                 }
             }
 
-            // Selection Controls
-            if (canApply) {
-                ResultsSelectionControls(
-                    selectedCount = uiState.selectedResolvers.size,
-                    maxCount = DnsScannerUiState.MAX_SELECTED_RESOLVERS,
-                    onClearSelection = { viewModel.clearSelection() }
-                )
-            }
-
             // Results
             val filteredResults = uiState.scannerState.results.filter {
                 (it.status == ResolverStatus.TUNNEL_VERIFIED ||
@@ -341,16 +334,15 @@ fun ScanResultsScreen(
                     it.host.split(".").map { part -> part.toIntOrNull() ?: 0 }
                         .fold(0L) { acc, i -> acc * 256 + i }
                 })
-                SortOption.SCORE -> filteredResults.sortedByDescending {
-                    it.tunnelTestResult?.score ?: 0
-                }
-                SortOption.E2E_SPEED -> filteredResults.sortedBy {
-                    it.e2eTestResult?.totalMs ?: Long.MAX_VALUE
-                }
+                SortOption.E2E_SPEED -> filteredResults.sortedWith(
+                    compareBy<ResolverScanResult> {
+                        if (it.status == ResolverStatus.TUNNEL_VERIFIED) 0 else 1
+                    }.thenBy { it.e2eTestResult?.totalMs ?: Long.MAX_VALUE }
+                )
                 SortOption.NONE -> filteredResults
             }
 
-            if (displayResults.isEmpty() && !uiState.scannerState.isScanning) {
+            if (displayResults.isEmpty() && !isActive) {
                 ResultsEmptyState()
             } else {
                 LazyColumn(
@@ -468,12 +460,11 @@ fun ScanResultsScreen(
 
 private enum class ScoreFilter(val label: String, val minScore: Int) {
     ALL("All", 0),
-    SCORE_3_PLUS("3+", 3),
     SCORE_4("4/4", 4)
 }
 
 private enum class SortOption {
-    NONE, SPEED, IP, SCORE, E2E_SPEED
+    NONE, SPEED, IP, E2E_SPEED
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -510,11 +501,31 @@ private fun SortControlBar(
                 )
 
                 FilterChip(
+                    selected = sortOption == SortOption.E2E_SPEED,
+                    onClick = {
+                        onSortOptionChange(if (sortOption == SortOption.E2E_SPEED) SortOption.NONE else SortOption.E2E_SPEED)
+                    },
+                    label = { Text("Tunnel Speed") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Speed,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.tertiary,
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.tertiary
+                    )
+                )
+
+                FilterChip(
                     selected = sortOption == SortOption.SPEED,
                     onClick = {
                         onSortOptionChange(if (sortOption == SortOption.SPEED) SortOption.NONE else SortOption.SPEED)
                     },
-                    label = { Text("Speed") },
+                    label = { Text("DNS Speed") },
                     leadingIcon = {
                         Icon(
                             Icons.Default.Speed,
@@ -546,46 +557,6 @@ private fun SortControlBar(
                         selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                         selectedLabelColor = MaterialTheme.colorScheme.primary,
                         selectedLeadingIconColor = MaterialTheme.colorScheme.primary
-                    )
-                )
-
-                FilterChip(
-                    selected = sortOption == SortOption.SCORE,
-                    onClick = {
-                        onSortOptionChange(if (sortOption == SortOption.SCORE) SortOption.NONE else SortOption.SCORE)
-                    },
-                    label = { Text("Score") },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Star,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.primary,
-                        selectedLeadingIconColor = MaterialTheme.colorScheme.primary
-                    )
-                )
-
-                FilterChip(
-                    selected = sortOption == SortOption.E2E_SPEED,
-                    onClick = {
-                        onSortOptionChange(if (sortOption == SortOption.E2E_SPEED) SortOption.NONE else SortOption.E2E_SPEED)
-                    },
-                    label = { Text("E2E") },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Speed,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.tertiary,
-                        selectedLeadingIconColor = MaterialTheme.colorScheme.tertiary
                     )
                 )
             }
@@ -621,27 +592,29 @@ private fun SortControlBar(
 }
 
 @Composable
-private fun ResultsProgressSection(
+private fun UnifiedProgressSection(
+    verifiedCount: Int,
+    selectedCount: Int,
+    maxSelected: Int,
     isScanning: Boolean,
-    progress: Float,
-    totalCount: Int,
+    isE2eRunning: Boolean,
+    scanProgress: Float,
     scannedCount: Int,
-    workingCount: Int,
-    onStopScan: () -> Unit,
-    onResumeScan: () -> Unit,
-    canRunE2e: Boolean = false,
-    canResumeE2e: Boolean = false,
-    e2eComplete: Boolean = false,
-    isE2eRunning: Boolean = false,
-    onStartE2eFresh: () -> Unit = {},
-    onResumeE2e: () -> Unit = {},
-    onStopE2e: () -> Unit = {}
+    totalCount: Int,
+    e2eTestedCount: Int,
+    e2eTotalCount: Int,
+    e2eCurrentResolver: String?,
+    e2eCurrentPhase: String,
+    canApply: Boolean,
+    canRetest: Boolean,
+    onStop: () -> Unit,
+    onRetest: () -> Unit
 ) {
+    val isActive = isScanning || isE2eRunning
     val animatedProgress by animateFloatAsState(
-        targetValue = progress,
+        targetValue = scanProgress,
         label = "progress"
     )
-    val canResume = !isScanning && scannedCount > 0 && scannedCount < totalCount
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -649,322 +622,141 @@ private fun ResultsProgressSection(
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Hero row: verified count + stop button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(20.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ResultsStatChip(
-                        icon = Icons.Default.Dns,
-                        label = "Total",
-                        value = totalCount.toString(),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    ResultsStatChip(
-                        icon = Icons.Default.Search,
-                        label = "Scanned",
-                        value = scannedCount.toString(),
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                    ResultsStatChip(
-                        icon = Icons.Default.CheckCircle,
-                        label = "Working",
-                        value = workingCount.toString(),
-                        color = WorkingGreen
-                    )
+                    if (verifiedCount > 0) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = WorkingGreen,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Text(
+                            text = "$verifiedCount server${if (verifiedCount != 1) "s" else ""} found",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = WorkingGreen
+                        )
+                    } else if (isActive) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.5.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Searching for servers...",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else {
+                        Text(
+                            text = "No servers found",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
-                if (isScanning) {
-                    Button(
-                        onClick = onStopScan,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = ErrorRed
-                        ),
+                if (isActive) {
+                    OutlinedButton(
+                        onClick = onStop,
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                     ) {
                         Icon(
                             Icons.Default.Stop,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Stop", style = MaterialTheme.typography.labelMedium)
+                        Text("Stop", style = MaterialTheme.typography.labelSmall)
                     }
-                } else if (canResume) {
-                    Button(
-                        onClick = onResumeScan,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        ),
+                } else if (canRetest) {
+                    OutlinedButton(
+                        onClick = onRetest,
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                     ) {
                         Icon(
-                            Icons.Default.PlayArrow,
+                            Icons.Default.Refresh,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Continue", style = MaterialTheme.typography.labelMedium)
+                        Text("Re-test", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
 
-            LinearProgressIndicator(
-                progress = { animatedProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                strokeCap = StrokeCap.Round
-            )
-
-            // E2E Test Tunnel buttons
-            if (!isScanning) {
-                if (isE2eRunning) {
-                    Button(
-                        onClick = onStopE2e,
-                        colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Stop Tunnel Test", style = MaterialTheme.typography.labelMedium)
-                    }
-                } else if (canResumeE2e) {
-                    // Paused mid-test: show Continue + Restart side by side
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = onResumeE2e,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.tertiary
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Continue", style = MaterialTheme.typography.labelMedium)
-                        }
-                        OutlinedButton(
-                            onClick = onStartE2eFresh,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Restart", style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-                } else if (e2eComplete) {
-                    // All tested: offer re-test
-                    OutlinedButton(
-                        onClick = onStartE2eFresh,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Re-test Tunnel", style = MaterialTheme.typography.labelMedium)
-                    }
-                } else if (canRunE2e) {
-                    // Fresh start
-                    Button(
-                        onClick = onStartE2eFresh,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.tertiary
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Test Tunnel", style = MaterialTheme.typography.labelMedium)
-                    }
+            // Hint text
+            if (verifiedCount > 0 && canApply) {
+                val hintText = when {
+                    selectedCount >= maxSelected && isActive ->
+                        "$maxSelected best auto-selected \u2014 scanning for better ones..."
+                    selectedCount >= maxSelected ->
+                        "$maxSelected best auto-selected"
+                    isActive ->
+                        "Ready to use \u2014 tap Apply, or wait for more"
+                    else ->
+                        "$selectedCount auto-selected"
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ResultsStatChip(
-    icon: ImageVector,
-    label: String,
-    value: String,
-    color: Color
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            icon,
-            contentDescription = null,
-            tint = color,
-            modifier = Modifier.size(14.dp)
-        )
-        Column {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun E2eProgressSection(e2eScannerState: E2eScannerState) {
-    val progress = if (e2eScannerState.totalCount > 0) {
-        e2eScannerState.testedCount.toFloat() / e2eScannerState.totalCount
-    } else 0f
-    val animatedProgress by animateFloatAsState(targetValue = progress, label = "e2eProgress")
-
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (e2eScannerState.isRunning) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                    }
-                    Text(
-                        text = "Tunnel Test: ${e2eScannerState.testedCount}/${e2eScannerState.totalCount}",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
-                    if (e2eScannerState.passedCount > 0) {
-                        Text(
-                            text = "${e2eScannerState.passedCount} passed",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = WorkingGreen
-                        )
-                    }
-                }
-            }
-
-            if (e2eScannerState.isRunning && e2eScannerState.currentResolver != null) {
                 Text(
-                    text = "${e2eScannerState.currentResolver} - ${e2eScannerState.currentPhase}",
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    text = hintText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isActive) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            LinearProgressIndicator(
-                progress = { animatedProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                strokeCap = StrokeCap.Round,
-                color = MaterialTheme.colorScheme.tertiary
-            )
-        }
-    }
-}
+            // Progress details (secondary)
+            if (isActive) {
+                val progressParts = mutableListOf<String>()
+                if (isScanning) {
+                    progressParts.add("Scanned $scannedCount/$totalCount")
+                }
+                if (isE2eRunning) {
+                    progressParts.add("Tunnels $e2eTestedCount/$e2eTotalCount")
+                }
+                Text(
+                    text = progressParts.joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
-@Composable
-private fun ResultsSelectionControls(
-    selectedCount: Int,
-    maxCount: Int,
-    onClearSelection: () -> Unit
-) {
-    AnimatedVisibility(
-        visible = selectedCount > 0,
-        enter = expandVertically() + fadeIn(),
-        exit = shrinkVertically() + fadeOut()
-    ) {
-        val isLimitReached = selectedCount >= maxCount
-
-        Surface(
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 1.dp,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (isLimitReached) CensoredOrange.copy(alpha = 0.15f)
-                                else MaterialTheme.colorScheme.primaryContainer
-                            )
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "$selectedCount / $maxCount selected",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isLimitReached) CensoredOrange
-                                    else MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    if (isLimitReached) {
-                        Text(
-                            text = "Limit reached",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = CensoredOrange
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    TextButton(onClick = onClearSelection) {
-                        Text("Clear")
-                    }
+                // Current E2E resolver being tested
+                if (isE2eRunning && e2eCurrentResolver != null) {
+                    Text(
+                        text = "$e2eCurrentResolver \u2014 $e2eCurrentPhase",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                // Subtle progress bar
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    strokeCap = StrokeCap.Round,
+                    color = if (verifiedCount > 0) WorkingGreen
+                           else MaterialTheme.colorScheme.primary
+                )
             }
         }
     }

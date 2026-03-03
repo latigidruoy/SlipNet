@@ -31,6 +31,9 @@ data class DnsTunnelTestResult(
     val isCompatible: Boolean
         get() = score == maxScore
 
+    val isEligibleForTunnel: Boolean
+        get() = score >= 3
+
     val details: String
         get() = buildString {
             append(if (nsSupport) "NS→A✓" else "NS→A✗")

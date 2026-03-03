@@ -87,7 +87,7 @@ data class DnsScannerUiState(
             if (e2eScannerState.isRunning) return false
             // Check for untested compatible (4/4) resolvers
             val untestedCompatible = scannerState.results.count {
-                it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isCompatible == true
+                it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isEligibleForTunnel == true
             }
             return untestedCompatible > 0
         }
@@ -97,7 +97,7 @@ data class DnsScannerUiState(
         get() {
             if (!canRunE2e) return false
             val hasUntested = scannerState.results.any {
-                it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isCompatible == true
+                it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isEligibleForTunnel == true
             }
             val hasTested = scannerState.results.any {
                 it.status == ResolverStatus.TUNNEL_VERIFIED || it.status == ResolverStatus.TUNNEL_FAILED
@@ -109,7 +109,7 @@ data class DnsScannerUiState(
     val e2eComplete: Boolean
         get() {
             val compatible = scannerState.results.filter {
-                (it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isCompatible == true) ||
+                (it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isEligibleForTunnel == true) ||
                     it.status == ResolverStatus.TUNNEL_VERIFIED ||
                     it.status == ResolverStatus.TUNNEL_FAILED
             }
@@ -564,6 +564,23 @@ class DnsScannerViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(selectedResolvers = emptySet())
     }
 
+    /**
+     * Auto-select the top N best TUNNEL_VERIFIED resolvers.
+     * Prefers 4/4 score over 3/4, then sorts by E2E speed.
+     */
+    private fun updateAutoSelection() {
+        val verified = _uiState.value.scannerState.results
+            .filter { it.status == ResolverStatus.TUNNEL_VERIFIED }
+            .sortedWith(
+                compareByDescending<ResolverScanResult> { it.tunnelTestResult?.score ?: 0 }
+                    .thenBy { it.e2eTestResult?.totalMs ?: Long.MAX_VALUE }
+            )
+            .take(DnsScannerUiState.MAX_SELECTED_RESOLVERS)
+            .map { it.host }
+            .toSet()
+        _uiState.value = _uiState.value.copy(selectedResolvers = verified)
+    }
+
     // --- Scan control ---
 
     fun startScan() {
@@ -747,7 +764,7 @@ class DnsScannerViewModel @Inject constructor(
             if (e2eChannel != null) {
                 for ((_, result) in existingResults) {
                     if (result.status == ResolverStatus.WORKING &&
-                        result.tunnelTestResult?.isCompatible == true
+                        result.tunnelTestResult?.isEligibleForTunnel == true
                     ) {
                         e2eCandidateCount++
                         e2eChannel.trySend(result)
@@ -811,6 +828,9 @@ class DnsScannerViewModel @Inject constructor(
                                     currentPhase = ""
                                 )
                             )
+
+                            // Auto-select best servers as results arrive
+                            updateAutoSelection()
                         }
                     }
 
@@ -842,7 +862,7 @@ class DnsScannerViewModel @Inject constructor(
 
                     // Queue compatible (4/4) resolvers for interleaved E2E testing
                     if (e2eChannel != null &&
-                        result.tunnelTestResult?.isCompatible == true
+                        result.tunnelTestResult?.isEligibleForTunnel == true
                     ) {
                         e2eCandidateCount++
                         _uiState.value = _uiState.value.copy(
@@ -940,7 +960,7 @@ class DnsScannerViewModel @Inject constructor(
         // Include only compatible (4/4) WORKING and previously tunnel-tested resolvers
         val eligible = state.scannerState.results
             .filter {
-                (it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isCompatible == true) ||
+                (it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isEligibleForTunnel == true) ||
                     it.status == ResolverStatus.TUNNEL_VERIFIED ||
                     it.status == ResolverStatus.TUNNEL_FAILED
             }
@@ -953,7 +973,7 @@ class DnsScannerViewModel @Inject constructor(
         // If fresh, reset tunnel-tested resolvers back to WORKING and clear E2E results
         if (fresh) {
             val clearedResults = state.scannerState.results.map { r ->
-                if ((r.status == ResolverStatus.WORKING && r.tunnelTestResult?.isCompatible == true) ||
+                if ((r.status == ResolverStatus.WORKING && r.tunnelTestResult?.isEligibleForTunnel == true) ||
                     r.status == ResolverStatus.TUNNEL_VERIFIED ||
                     r.status == ResolverStatus.TUNNEL_FAILED
                 ) {
@@ -968,7 +988,7 @@ class DnsScannerViewModel @Inject constructor(
         // Determine which resolvers still need testing (resume support)
         val currentResults = _uiState.value.scannerState.results
         val allEligible = currentResults.filter {
-            (it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isCompatible == true) ||
+            (it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isEligibleForTunnel == true) ||
                 it.status == ResolverStatus.TUNNEL_VERIFIED ||
                 it.status == ResolverStatus.TUNNEL_FAILED
         }
@@ -1039,6 +1059,9 @@ class DnsScannerViewModel @Inject constructor(
                         currentPhase = ""
                     )
                 )
+
+                // Auto-select best servers as results arrive
+                updateAutoSelection()
             }
 
             // Done
