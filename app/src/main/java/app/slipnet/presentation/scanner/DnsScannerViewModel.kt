@@ -84,31 +84,35 @@ data class DnsScannerUiState(
             if (isVpnActive) return false
             if (scannerState.isScanning) return false
             if (e2eScannerState.isRunning) return false
-            // Check for untested resolvers (WORKING status = not yet tunnel-tested)
-            val untestedResolvers = scannerState.results.count { it.status == ResolverStatus.WORKING }
-            return untestedResolvers > 0
+            // Check for untested compatible (4/4) resolvers
+            val untestedCompatible = scannerState.results.count {
+                it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isCompatible == true
+            }
+            return untestedCompatible > 0
         }
 
     /** True when some resolvers have been tunnel-tested but others haven't (paused mid-test) */
     val canResumeE2e: Boolean
         get() {
             if (!canRunE2e) return false
-            val hasUntested = scannerState.results.any { it.status == ResolverStatus.WORKING }
+            val hasUntested = scannerState.results.any {
+                it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isCompatible == true
+            }
             val hasTested = scannerState.results.any {
                 it.status == ResolverStatus.TUNNEL_VERIFIED || it.status == ResolverStatus.TUNNEL_FAILED
             }
             return hasUntested && hasTested
         }
 
-    /** True when all eligible resolvers have been tunnel-tested (none left as WORKING) */
+    /** True when all compatible resolvers have been tunnel-tested */
     val e2eComplete: Boolean
         get() {
-            val eligible = scannerState.results.filter {
-                it.status == ResolverStatus.WORKING ||
+            val compatible = scannerState.results.filter {
+                (it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isCompatible == true) ||
                     it.status == ResolverStatus.TUNNEL_VERIFIED ||
                     it.status == ResolverStatus.TUNNEL_FAILED
             }
-            return eligible.isNotEmpty() && eligible.none { it.status == ResolverStatus.WORKING }
+            return compatible.isNotEmpty() && compatible.none { it.status == ResolverStatus.WORKING }
         }
 }
 
@@ -867,23 +871,23 @@ class DnsScannerViewModel @Inject constructor(
             return
         }
 
-        // Include WORKING and previously tunnel-tested resolvers
+        // Include only compatible (4/4) WORKING and previously tunnel-tested resolvers
         val eligible = state.scannerState.results
             .filter {
-                it.status == ResolverStatus.WORKING ||
+                (it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isCompatible == true) ||
                     it.status == ResolverStatus.TUNNEL_VERIFIED ||
                     it.status == ResolverStatus.TUNNEL_FAILED
             }
 
         if (eligible.isEmpty()) {
-            _uiState.value = state.copy(error = "No working resolvers to test")
+            _uiState.value = state.copy(error = "No compatible (4/4) resolvers to test")
             return
         }
 
         // If fresh, reset tunnel-tested resolvers back to WORKING and clear E2E results
         if (fresh) {
             val clearedResults = state.scannerState.results.map { r ->
-                if (r.status == ResolverStatus.WORKING ||
+                if ((r.status == ResolverStatus.WORKING && r.tunnelTestResult?.isCompatible == true) ||
                     r.status == ResolverStatus.TUNNEL_VERIFIED ||
                     r.status == ResolverStatus.TUNNEL_FAILED
                 ) {
@@ -898,7 +902,7 @@ class DnsScannerViewModel @Inject constructor(
         // Determine which resolvers still need testing (resume support)
         val currentResults = _uiState.value.scannerState.results
         val allEligible = currentResults.filter {
-            it.status == ResolverStatus.WORKING ||
+            (it.status == ResolverStatus.WORKING && it.tunnelTestResult?.isCompatible == true) ||
                 it.status == ResolverStatus.TUNNEL_VERIFIED ||
                 it.status == ResolverStatus.TUNNEL_FAILED
         }
