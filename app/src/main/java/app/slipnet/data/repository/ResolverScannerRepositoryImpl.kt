@@ -152,16 +152,35 @@ class ResolverScannerRepositoryImpl @Inject constructor(
         }
 
         // Test NS delegation + glue record (queries NS for parent zone)
+        // This is the most critical test — if it fails, tunneling can't work.
         val nsSupport = testNsDelegation(host, port, testDomain, timeoutMs)
 
-        // Test TXT record support (against the parent zone)
-        val txtSupport = testRecordType(host, port, parentDomain, DNS_TYPE_TXT, timeoutMs)
+        // Fail-fast: if NS delegation fails, skip remaining tests (resolver can't be 4/4)
+        val txtSupport: Boolean
+        val randomSubdomain1: Boolean
+        val randomSubdomain2: Boolean
 
-        // Test random subdomain 1 (nested random subdomains)
-        val randomSubdomain1 = testRandomSubdomain(host, port, testDomain, timeoutMs)
+        if (!nsSupport) {
+            txtSupport = false
+            randomSubdomain1 = false
+            randomSubdomain2 = false
+        } else {
+            // Test TXT record support (against the parent zone)
+            txtSupport = testRecordType(host, port, parentDomain, DNS_TYPE_TXT, timeoutMs)
 
-        // Test random subdomain 2 (another nested random subdomain test)
-        val randomSubdomain2 = testRandomSubdomain(host, port, testDomain, timeoutMs)
+            if (!txtSupport) {
+                randomSubdomain1 = false
+                randomSubdomain2 = false
+            } else {
+                // Test random subdomain 1 (nested random subdomains)
+                randomSubdomain1 = testRandomSubdomain(host, port, testDomain, timeoutMs)
+
+                // Test random subdomain 2 (only if first passed)
+                randomSubdomain2 = if (randomSubdomain1) {
+                    testRandomSubdomain(host, port, testDomain, timeoutMs)
+                } else false
+            }
+        }
 
         val responseTime = System.currentTimeMillis() - startTime
 

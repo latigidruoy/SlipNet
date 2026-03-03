@@ -33,6 +33,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -707,6 +708,16 @@ class DnsScannerViewModel @Inject constructor(
             } catch (_: Exception) { }
         }
 
+        // Determine if we should interleave E2E tunnel testing with the DNS scan
+        val profile = _uiState.value.profile
+        val shouldInterleaveE2e = profile != null &&
+            profile.tunnelType in DnsScannerUiState.E2E_SUPPORTED_TUNNEL_TYPES &&
+            !((profile.tunnelType == TunnelType.DNSTT || profile.tunnelType == TunnelType.DNSTT_SSH)
+                && profile.dnsTransport == DnsTransport.DOH) &&
+            !vpnRepository.isConnected()
+
+        val e2eChannel = if (shouldInterleaveE2e) Channel<ResolverScanResult>(Channel.UNLIMITED) else null
+
         scanJob = viewModelScope.launch {
             val resultsMap = mutableMapOf<String, ResolverScanResult>()
             resultsMap.putAll(existingResults)
@@ -717,6 +728,110 @@ class DnsScannerViewModel @Inject constructor(
             hosts.forEach { host ->
                 resultsMap[host] = ResolverScanResult(host = host, status = ResolverStatus.SCANNING)
             }
+
+            // Initialize E2E state and launch worker if interleaving
+            if (shouldInterleaveE2e) {
+                _uiState.value = _uiState.value.copy(
+                    e2eScannerState = E2eScannerState(
+                        isRunning = true,
+                        totalCount = 0,
+                        testedCount = 0,
+                        passedCount = 0
+                    )
+                )
+            }
+
+            var e2eCandidateCount = 0
+            val maxE2eCandidates = 30
+
+            // Queue any existing WORKING+compatible resolvers from a resumed scan
+            if (e2eChannel != null) {
+                for ((_, result) in existingResults) {
+                    if (result.status == ResolverStatus.WORKING &&
+                        result.tunnelTestResult?.isCompatible == true &&
+                        e2eCandidateCount < maxE2eCandidates
+                    ) {
+                        e2eCandidateCount++
+                        e2eChannel.trySend(result)
+                    }
+                }
+                if (e2eCandidateCount > 0) {
+                    _uiState.value = _uiState.value.copy(
+                        e2eScannerState = _uiState.value.e2eScannerState.copy(
+                            totalCount = e2eCandidateCount
+                        )
+                    )
+                }
+            }
+
+            // Launch E2E worker coroutine — runs concurrently with DNS scan,
+            // processing 4/4 resolvers as they are discovered.
+            // E2E tests are sequential (singleton bridges) but overlap with DNS scanning.
+            val e2eWorkerJob = if (shouldInterleaveE2e && e2eChannel != null && profile != null) {
+                launch {
+                    var testedCount = 0
+                    var passedCount = 0
+
+                    for (resolver in e2eChannel) {
+                        // Early termination: stop after finding enough verified resolvers
+                        if (passedCount >= DnsScannerUiState.MAX_SELECTED_RESOLVERS) break
+
+                        scannerRepository.testResolversE2e(
+                            resolvers = listOf(resolver.host to resolver.port),
+                            profile = profile,
+                            testUrl = _uiState.value.testUrl,
+                            timeoutMs = _uiState.value.e2eTimeoutMs.toLongOrNull() ?: 7000L,
+                            onPhaseUpdate = { r, phase ->
+                                _uiState.value = _uiState.value.copy(
+                                    e2eScannerState = _uiState.value.e2eScannerState.copy(
+                                        currentResolver = r,
+                                        currentPhase = phase
+                                    )
+                                )
+                            }
+                        ).collect { (host, e2eResult) ->
+                            testedCount++
+                            if (e2eResult.success) passedCount++
+
+                            val newStatus = if (e2eResult.success)
+                                ResolverStatus.TUNNEL_VERIFIED
+                            else
+                                ResolverStatus.TUNNEL_FAILED
+
+                            // Update shared resultsMap so DNS scan state rebuilds include E2E changes
+                            resultsMap[host]?.let { existing ->
+                                resultsMap[host] = existing.copy(status = newStatus, e2eTestResult = e2eResult)
+                            }
+
+                            _uiState.value = _uiState.value.copy(
+                                scannerState = _uiState.value.scannerState.copy(
+                                    results = allHosts.map { h ->
+                                        resultsMap[h] ?: ResolverScanResult(host = h, status = ResolverStatus.PENDING)
+                                    }
+                                ),
+                                e2eScannerState = _uiState.value.e2eScannerState.copy(
+                                    testedCount = testedCount,
+                                    passedCount = passedCount,
+                                    currentResolver = null,
+                                    currentPhase = ""
+                                )
+                            )
+                        }
+                    }
+
+                    // E2E worker completed
+                    _uiState.value = _uiState.value.copy(
+                        e2eScannerState = _uiState.value.e2eScannerState.copy(
+                            isRunning = false,
+                            currentResolver = null,
+                            currentPhase = ""
+                        )
+                    )
+                }
+            } else null
+
+            // Store E2E job reference for independent cancellation
+            e2eJob = e2eWorkerJob
 
             scannerRepository.scanResolvers(
                 hosts = hosts,
@@ -729,6 +844,20 @@ class DnsScannerViewModel @Inject constructor(
 
                 if (result.status == ResolverStatus.WORKING) {
                     workingCount++
+
+                    // Queue compatible (4/4) resolvers for interleaved E2E testing
+                    if (e2eChannel != null &&
+                        result.tunnelTestResult?.isCompatible == true &&
+                        e2eCandidateCount < maxE2eCandidates
+                    ) {
+                        e2eCandidateCount++
+                        _uiState.value = _uiState.value.copy(
+                            e2eScannerState = _uiState.value.e2eScannerState.copy(
+                                totalCount = e2eCandidateCount
+                            )
+                        )
+                        e2eChannel.trySend(result)
+                    }
                 }
 
                 _uiState.value = _uiState.value.copy(
@@ -744,107 +873,50 @@ class DnsScannerViewModel @Inject constructor(
                 )
             }
 
-            // Scan completed — clear saved session.
+            // DNS scan completed — close channel so E2E worker finishes remaining items
+            e2eChannel?.close()
+
+            // Mark DNS scan as complete
             _uiState.value = _uiState.value.copy(
                 scannerState = _uiState.value.scannerState.copy(isScanning = false)
             )
             clearSavedSession()
 
-            // Auto-chain E2E tunnel test on compatible resolvers
-            autoChainE2eIfNeeded()
-        }
-    }
-
-    /**
-     * Automatically starts E2E tunnel testing on score-4/4 resolvers after DNS scan completes.
-     * Only runs when a compatible profile is selected and VPN is not active.
-     */
-    private fun autoChainE2eIfNeeded() {
-        val state = _uiState.value
-        val profile = state.profile ?: return
-
-        // Check profile supports E2E tunnel types
-        if (profile.tunnelType !in DnsScannerUiState.E2E_SUPPORTED_TUNNEL_TYPES) return
-        if ((profile.tunnelType == TunnelType.DNSTT || profile.tunnelType == TunnelType.DNSTT_SSH)
-            && profile.dnsTransport == DnsTransport.DOH) return
-        if (vpnRepository.isConnected()) return
-
-        // Filter to only score 4/4 resolvers, sorted by fastest response, capped at 30
-        val candidates = state.scannerState.results
-            .filter {
-                it.status == ResolverStatus.WORKING &&
-                    it.tunnelTestResult?.isCompatible == true
-            }
-            .sortedBy { it.responseTimeMs ?: Long.MAX_VALUE }
-            .take(30)
-
-        if (candidates.isEmpty()) return
-
-        _uiState.value = _uiState.value.copy(
-            e2eScannerState = E2eScannerState(
-                isRunning = true,
-                totalCount = candidates.size,
-                testedCount = 0,
-                passedCount = 0
-            )
-        )
-
-        e2eJob = viewModelScope.launch {
-            var testedCount = 0
-            var passedCount = 0
-
-            val resolverPairs = candidates.map { it.host to it.port }
-
-            scannerRepository.testResolversE2e(
-                resolvers = resolverPairs,
-                profile = profile,
-                testUrl = _uiState.value.testUrl,
-                timeoutMs = _uiState.value.e2eTimeoutMs.toLongOrNull() ?: 7000L,
-                onPhaseUpdate = { resolver, phase ->
-                    _uiState.value = _uiState.value.copy(
-                        e2eScannerState = _uiState.value.e2eScannerState.copy(
-                            currentResolver = resolver,
-                            currentPhase = phase
-                        )
-                    )
-                }
-            ).collect { (host, e2eResult) ->
-                testedCount++
-                if (e2eResult.success) passedCount++
-
-                val newStatus = if (e2eResult.success)
-                    ResolverStatus.TUNNEL_VERIFIED
-                else
-                    ResolverStatus.TUNNEL_FAILED
-
-                val updatedResults = _uiState.value.scannerState.results.map { r ->
-                    if (r.host == host) r.copy(status = newStatus, e2eTestResult = e2eResult) else r
-                }
-
-                _uiState.value = _uiState.value.copy(
-                    scannerState = _uiState.value.scannerState.copy(results = updatedResults),
-                    e2eScannerState = _uiState.value.e2eScannerState.copy(
-                        testedCount = testedCount,
-                        passedCount = passedCount,
-                        currentResolver = null,
-                        currentPhase = ""
-                    )
-                )
-            }
-
-            // Auto-chain completed
-            _uiState.value = _uiState.value.copy(
-                e2eScannerState = _uiState.value.e2eScannerState.copy(isRunning = false)
-            )
+            // Wait for E2E worker to finish processing remaining candidates
+            e2eWorkerJob?.join()
         }
     }
 
     fun stopScan() {
         scanJob?.cancel()
         _uiState.value = _uiState.value.copy(
-            scannerState = _uiState.value.scannerState.copy(isScanning = false)
+            scannerState = _uiState.value.scannerState.copy(isScanning = false),
+            e2eScannerState = _uiState.value.e2eScannerState.copy(
+                isRunning = false,
+                currentResolver = null,
+                currentPhase = ""
+            )
         )
         saveScanSessionToStore()
+
+        // Clean up any running bridge from interleaved E2E
+        val profile = _uiState.value.profile ?: return
+        if (profile.tunnelType in DnsScannerUiState.E2E_SUPPORTED_TUNNEL_TYPES) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    when (profile.tunnelType) {
+                        TunnelType.SLIPSTREAM, TunnelType.SLIPSTREAM_SSH -> {
+                            SlipstreamBridge.stopClient()
+                            SlipstreamBridge.proxyOnlyMode = false
+                        }
+                        TunnelType.DNSTT, TunnelType.DNSTT_SSH -> {
+                            DnsttBridge.stopClient()
+                        }
+                        else -> {}
+                    }
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     // --- E2E tunnel testing ---
