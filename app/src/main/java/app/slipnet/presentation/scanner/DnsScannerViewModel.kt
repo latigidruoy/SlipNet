@@ -913,22 +913,25 @@ class DnsScannerViewModel @Inject constructor(
         )
         saveScanSessionToStore()
 
-        // Clean up any running bridge from interleaved E2E
-        val profile = _uiState.value.profile ?: return
-        if (profile.tunnelType in DnsScannerUiState.E2E_SUPPORTED_TUNNEL_TYPES) {
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    when (profile.tunnelType) {
-                        TunnelType.SLIPSTREAM, TunnelType.SLIPSTREAM_SSH -> {
-                            SlipstreamBridge.stopClient()
-                            SlipstreamBridge.proxyOnlyMode = false
+        // Clean up any running bridge from interleaved E2E —
+        // but ONLY if VPN is not actively using the bridge (singleton shared state)
+        if (!vpnRepository.isConnected()) {
+            val profile = _uiState.value.profile ?: return
+            if (profile.tunnelType in DnsScannerUiState.E2E_SUPPORTED_TUNNEL_TYPES) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        when (profile.tunnelType) {
+                            TunnelType.SLIPSTREAM, TunnelType.SLIPSTREAM_SSH -> {
+                                SlipstreamBridge.stopClient()
+                                SlipstreamBridge.proxyOnlyMode = false
+                            }
+                            TunnelType.DNSTT, TunnelType.DNSTT_SSH -> {
+                                DnsttBridge.stopClient()
+                            }
+                            else -> {}
                         }
-                        TunnelType.DNSTT, TunnelType.DNSTT_SSH -> {
-                            DnsttBridge.stopClient()
-                        }
-                        else -> {}
-                    }
-                } catch (_: Exception) {}
+                    } catch (_: Exception) {}
+                }
             }
         }
     }
@@ -1081,21 +1084,24 @@ class DnsScannerViewModel @Inject constructor(
             )
         )
 
-        // Clean up any running bridge
-        val profile = _uiState.value.profile ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                when (profile.tunnelType) {
-                    TunnelType.SLIPSTREAM, TunnelType.SLIPSTREAM_SSH -> {
-                        SlipstreamBridge.stopClient()
-                        SlipstreamBridge.proxyOnlyMode = false
+        // Clean up any running bridge —
+        // but ONLY if VPN is not actively using the bridge (singleton shared state)
+        if (!vpnRepository.isConnected()) {
+            val profile = _uiState.value.profile ?: return
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    when (profile.tunnelType) {
+                        TunnelType.SLIPSTREAM, TunnelType.SLIPSTREAM_SSH -> {
+                            SlipstreamBridge.stopClient()
+                            SlipstreamBridge.proxyOnlyMode = false
+                        }
+                        TunnelType.DNSTT, TunnelType.DNSTT_SSH -> {
+                            DnsttBridge.stopClient()
+                        }
+                        else -> {}
                     }
-                    TunnelType.DNSTT, TunnelType.DNSTT_SSH -> {
-                        DnsttBridge.stopClient()
-                    }
-                    else -> {}
-                }
-            } catch (_: Exception) {}
+                } catch (_: Exception) {}
+            }
         }
     }
 
