@@ -821,7 +821,7 @@ object SlipstreamSocksBridge {
     }
 
     /**
-     * Handle FWD_UDP (cmd 0x05) — same wire format as SshTunnelBridge/DohBridge.
+     * Handle FWD_UDP (cmd 0x05) — same wire format as SshTunnelBridge.
      * DNS (port 53): through persistent worker pool, DoH fallback.
      * Non-DNS UDP: dropped silently (browser falls back to TCP CONNECT).
      */

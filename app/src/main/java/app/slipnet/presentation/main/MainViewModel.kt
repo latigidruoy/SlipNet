@@ -20,7 +20,6 @@ import app.slipnet.domain.usecase.GetProfilesUseCase
 import app.slipnet.domain.usecase.SaveProfileUseCase
 import app.slipnet.domain.usecase.SetActiveProfileUseCase
 import app.slipnet.service.VpnConnectionManager
-import app.slipnet.tunnel.SnowflakeBridge
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -52,7 +51,6 @@ data class MainUiState(
     val activeProfile: ServerProfile? = null,
     val proxyOnlyMode: Boolean = false,
     val debugLogging: Boolean = false,
-    val snowflakeBootstrapProgress: Int = -1,
     // Profile list state
     val profiles: List<ServerProfile> = emptyList(),
     val connectedProfileId: Long? = null,
@@ -93,7 +91,6 @@ class MainViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
-    private var bootstrapPollingJob: Job? = null
     private var trafficPollingJob: Job? = null
     private var sleepTimerJob: Job? = null
     private var pingJob: Job? = null
@@ -120,11 +117,6 @@ class MainViewModel @Inject constructor(
                     connectedProfileId = connectedId,
                     error = if (state is ConnectionState.Error) state.message else _uiState.value.error
                 )
-                if (state is ConnectionState.Connecting) {
-                    startBootstrapPolling()
-                } else {
-                    stopBootstrapPolling()
-                }
                 if (state is ConnectionState.Connected) {
                     startTrafficPolling()
                     startSleepTimer()
@@ -134,25 +126,6 @@ class MainViewModel @Inject constructor(
                 }
             }
         }
-    }
-
-    private fun startBootstrapPolling() {
-        bootstrapPollingJob?.cancel()
-        bootstrapPollingJob = viewModelScope.launch {
-            while (true) {
-                val progress = SnowflakeBridge.torBootstrapProgress
-                _uiState.value = _uiState.value.copy(
-                    snowflakeBootstrapProgress = if (progress > 0) progress else -1
-                )
-                delay(500)
-            }
-        }
-    }
-
-    private fun stopBootstrapPolling() {
-        bootstrapPollingJob?.cancel()
-        bootstrapPollingJob = null
-        _uiState.value = _uiState.value.copy(snowflakeBootstrapProgress = -1)
     }
 
     private var previousStats: TrafficStats = TrafficStats.EMPTY
@@ -454,22 +427,14 @@ class MainViewModel @Inject constructor(
         val profiles = _uiState.value.profiles
         if (profiles.isEmpty()) return
 
-        // Snowflake/Tor uses relays — direct ping is meaningless
-        val skipped = setOf(TunnelType.SNOWFLAKE)
         val initial = profiles.associate { profile ->
-            profile.id to if (profile.tunnelType in skipped) {
-                PingResult.Skipped
-            } else {
-                PingResult.Pending
-            }
+            profile.id to PingResult.Pending
         }
         _uiState.value = _uiState.value.copy(pingResults = initial, isPingRunning = true)
 
         pingJob = viewModelScope.launch {
             try {
                 for (profile in profiles) {
-                    if (profile.tunnelType in skipped) continue
-
                     val result = pingProfile(profile)
                     _uiState.value = _uiState.value.copy(
                         pingResults = _uiState.value.pingResults + (profile.id to result)
@@ -523,9 +488,6 @@ class MainViewModel @Inject constructor(
 
     private fun getPingTarget(profile: ServerProfile): PingTarget? {
         return when (profile.tunnelType) {
-            TunnelType.SSH -> PingTarget.Tcp(profile.domain, profile.sshPort)
-            TunnelType.NAIVE_SSH -> PingTarget.Tcp(profile.domain, profile.naivePort)
-            TunnelType.NAIVE -> PingTarget.Tcp(profile.domain, profile.naivePort)
             TunnelType.DNSTT, TunnelType.DNSTT_SSH,
             TunnelType.SLIPSTREAM, TunnelType.SLIPSTREAM_SSH -> {
                 // DNS-tunneled: ping the first resolver
@@ -533,14 +495,6 @@ class MainViewModel @Inject constructor(
                     ?: return null
                 PingTarget.Tcp(resolver.host, resolver.port)
             }
-            TunnelType.DOH -> {
-                // DoH: ping the DoH server on HTTPS port
-                val host = try {
-                    java.net.URL(profile.dohUrl).host
-                } catch (_: Exception) { return null }
-                PingTarget.Tcp(host, 443)
-            }
-            TunnelType.SNOWFLAKE -> null
         }
     }
 }

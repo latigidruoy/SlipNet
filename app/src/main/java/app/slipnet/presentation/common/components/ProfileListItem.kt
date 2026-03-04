@@ -40,11 +40,9 @@ import androidx.compose.ui.unit.dp
 import app.slipnet.domain.model.PingResult
 import app.slipnet.domain.model.ServerProfile
 import app.slipnet.domain.model.TunnelType
-import app.slipnet.presentation.profiles.EditProfileViewModel
 import app.slipnet.presentation.theme.ConnectedGreen
 import app.slipnet.presentation.theme.ConnectingOrange
 import app.slipnet.presentation.theme.DisconnectedRed
-import app.slipnet.tunnel.DOH_SERVERS
 
 @Composable
 fun ProfileListItem(
@@ -205,14 +203,10 @@ fun ProfileListItem(
                         "Locked"
                     } else {
                         when (profile.tunnelType) {
-                            TunnelType.DOH -> DOH_SERVERS.firstOrNull { it.url == profile.dohUrl }?.name
-                                ?: profile.dohUrl
-                            TunnelType.SSH -> "${profile.domain}:${profile.sshPort}"
-                            TunnelType.DNSTT_SSH -> "${profile.domain} via SSH"
-                            TunnelType.NAIVE_SSH -> "${profile.domain}:${profile.naivePort} via SSH"
-                            TunnelType.NAIVE -> "${profile.domain}:${profile.naivePort}"
-                            TunnelType.SNOWFLAKE -> "Tor Network"
-                            else -> profile.domain
+                            TunnelType.DNSTT_SSH, TunnelType.SLIPSTREAM_SSH ->
+                                "${profile.domain} via SSH"
+                            TunnelType.DNSTT, TunnelType.SLIPSTREAM ->
+                                profile.domain
                         }
                     },
                     style = MaterialTheme.typography.bodyMedium,
@@ -223,10 +217,7 @@ fun ProfileListItem(
 
                 // Detail line: tunnel type
                 Text(
-                    text = when (profile.tunnelType) {
-                        TunnelType.SNOWFLAKE -> EditProfileViewModel.detectBridgeType(profile.torBridgeLines).displayName
-                        else -> profile.tunnelType.displayName
-                    },
+                    text = profile.tunnelType.displayName,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

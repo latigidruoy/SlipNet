@@ -26,16 +26,11 @@ import app.slipnet.domain.model.ConnectionState
 import app.slipnet.domain.model.TunnelType
 import app.slipnet.tunnel.DnsttBridge
 import app.slipnet.tunnel.DnsttSocksBridge
-import app.slipnet.tunnel.DohBridge
 import app.slipnet.tunnel.HevSocks5Tunnel
 import app.slipnet.tunnel.HttpProxyServer
-import app.slipnet.tunnel.NaiveBridge
-import app.slipnet.tunnel.NaiveSocksBridge
 import app.slipnet.tunnel.SlipstreamBridge
 import app.slipnet.tunnel.SlipstreamSocksBridge
-import app.slipnet.tunnel.SnowflakeBridge
 import app.slipnet.tunnel.SshTunnelBridge
-import app.slipnet.tunnel.TorSocksBridge
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -264,20 +259,14 @@ class SlipNetVpnService : VpnService() {
                 // Set debug logging on tunnel bridges
                 val debug = preferencesDataStore.debugLogging.first()
                 SshTunnelBridge.debugLogging = debug
-                DohBridge.debugLogging = debug
                 SlipstreamSocksBridge.debugLogging = debug
                 DnsttSocksBridge.debugLogging = debug
-                NaiveSocksBridge.debugLogging = debug
-                TorSocksBridge.debugLogging = debug
                 HttpProxyServer.debugLogging = debug
 
                 // Configure domain routing on bridges
                 val domainRouter = buildDomainRouter()
                 SshTunnelBridge.domainRouter = domainRouter
-                DohBridge.domainRouter = domainRouter
                 SlipstreamSocksBridge.domainRouter = domainRouter
-                NaiveSocksBridge.domainRouter = domainRouter
-                TorSocksBridge.domainRouter = domainRouter
 
                 // Track the tunnel type for this connection
                 currentTunnelType = profile.tunnelType
@@ -309,12 +298,7 @@ class SlipNetVpnService : VpnService() {
                     TunnelType.SLIPSTREAM -> connectSlipstream(profile, dnsServer, remoteDns, remoteDnsFallback)
                     TunnelType.SLIPSTREAM_SSH -> connectSlipstreamSsh(profile, dnsServer, remoteDns, remoteDnsFallback)
                     TunnelType.DNSTT -> connectDnstt(profile, dnsServer, remoteDns, remoteDnsFallback)
-                    TunnelType.SSH -> connectSsh(profile, dnsServer, remoteDns, remoteDnsFallback)
                     TunnelType.DNSTT_SSH -> connectDnsttSsh(profile, dnsServer, remoteDns, remoteDnsFallback)
-                    TunnelType.DOH -> connectDoh(profile, dnsServer)
-                    TunnelType.SNOWFLAKE -> connectSnowflake(profile, dnsServer)
-                    TunnelType.NAIVE_SSH -> connectNaiveSsh(profile, dnsServer, remoteDns, remoteDnsFallback)
-                    TunnelType.NAIVE -> connectNaive(profile, dnsServer, remoteDns, remoteDnsFallback)
                 }
 
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -527,8 +511,6 @@ class SlipNetVpnService : VpnService() {
             preferencesDataStore.sshMaxChannels.first()
         } else {
             when (currentTunnelType) {
-                TunnelType.SSH -> 32
-                TunnelType.NAIVE_SSH -> 32
                 TunnelType.SLIPSTREAM_SSH -> 24
                 TunnelType.DNSTT_SSH -> 12
                 else -> 16
@@ -789,511 +771,6 @@ class SlipNetVpnService : VpnService() {
     }
 
     /**
-     * Connect using SSH-only tunnel type.
-     * Order: Establish VPN interface (with app exclusion) -> Start SSH tunnel -> Wait for ready -> tun2socks
-     *
-     * SSH connects directly to the remote server (no DNS tunneling).
-     * DNS queries go direct via DatagramSocket (bypasses VPN via addDisallowedApplication).
-     */
-    private suspend fun connectSsh(profile: app.slipnet.domain.model.ServerProfile, dnsServer: String, remoteDns: String, remoteDnsFallback: String) {
-        val proxyPort = preferencesDataStore.proxyListenPort.first()
-        val proxyHost = preferencesDataStore.proxyListenAddress.first()
-
-        if (isProxyOnly) {
-            // Proxy-only: no VPN needed, start SSH directly (sockets go direct anyway)
-            configureSshBridge()
-            val sshResult = withContext(Dispatchers.IO) {
-                Log.i(TAG, "Starting SSH tunnel (direct to ${profile.domain}:${profile.sshPort})")
-                SshTunnelBridge.startDirect(
-                    tunnelHost = profile.domain,
-                    tunnelPort = profile.sshPort,
-                    sshUsername = profile.sshUsername,
-                    sshPassword = profile.sshPassword,
-                    listenPort = proxyPort,
-                    listenHost = proxyHost,
-                    forwardDnsThroughSsh = true,
-                    sshAuthType = profile.sshAuthType,
-                    sshPrivateKey = profile.sshPrivateKey,
-                    sshKeyPassphrase = profile.sshKeyPassphrase,
-                    remoteDnsHost = remoteDns,
-                    remoteDnsFallback = remoteDnsFallback
-                )
-            }
-            if (sshResult.isFailure) {
-                connectionManager.onVpnError(sshResult.exceptionOrNull()?.message ?: "Failed to start SSH tunnel")
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            if (!waitForProxyReady(proxyPort, maxAttempts = 30, delayMs = 100)) {
-                Log.e(TAG, "SSH SOCKS5 proxy failed to become ready")
-                connectionManager.onVpnError("SSH tunnel failed to start")
-                SshTunnelBridge.stop()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            vpnRepository.setProxyConnected(profile)
-            Log.i(TAG, "Proxy-only mode: SSH SOCKS5 proxy ready on $proxyHost:$proxyPort")
-            finishConnection()
-            return
-        }
-
-        // Step 1: Establish VPN interface with addDisallowedApplication
-        // This ensures SSH's socket and DNS queries bypass the VPN
-        vpnInterface = establishVpnInterface(dnsServer)
-        if (vpnInterface == null) {
-            connectionManager.onVpnError("Failed to establish VPN interface")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Brief delay to let VPN routing settle
-        delay(200)
-
-        // Step 2: Start SSH tunnel directly to the SSH server
-        configureSshBridge()
-        val sshResult = withContext(Dispatchers.IO) {
-            Log.i(TAG, "Starting SSH tunnel (direct to ${profile.domain}:${profile.sshPort})")
-            SshTunnelBridge.startDirect(
-                tunnelHost = profile.domain,
-                tunnelPort = profile.sshPort,
-                sshUsername = profile.sshUsername,
-                sshPassword = profile.sshPassword,
-                listenPort = proxyPort,
-                listenHost = proxyHost,
-                forwardDnsThroughSsh = true,
-                sshAuthType = profile.sshAuthType,
-                sshPrivateKey = profile.sshPrivateKey,
-                sshKeyPassphrase = profile.sshKeyPassphrase,
-                remoteDnsHost = remoteDns,
-                remoteDnsFallback = remoteDnsFallback
-            )
-        }
-        if (sshResult.isFailure) {
-            connectionManager.onVpnError(sshResult.exceptionOrNull()?.message ?: "Failed to start SSH tunnel")
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Step 2.5: Wait for SSH SOCKS5 proxy to be ready
-        if (!waitForProxyReady(proxyPort, maxAttempts = 30, delayMs = 100)) {
-            Log.e(TAG, "SSH SOCKS5 proxy failed to become ready")
-            connectionManager.onVpnError("SSH tunnel failed to start")
-            SshTunnelBridge.stop()
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Step 3: Start tun2socks
-        val tun2socksResult = vpnRepository.startTun2Socks(profile, vpnInterface!!)
-        if (tun2socksResult.isFailure) {
-            connectionManager.onVpnError(tun2socksResult.exceptionOrNull()?.message ?: "Failed to start tunnel")
-            SshTunnelBridge.stop()
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        Log.d(TAG, "SSH tunnel started")
-        finishConnection()
-    }
-
-    /**
-     * Connect using NaiveProxy + SSH tunnel type.
-     * NaiveProxy provides a local SOCKS5 proxy that tunnels through Caddy's
-     * forwardproxy with authentic Chrome TLS fingerprinting. JSch connects
-     * through NaiveProxy's SOCKS5 to reach the SSH server.
-     *
-     * Traffic flow:
-     * App -> TUN -> hev-socks5-tunnel -> SshTunnelBridge SOCKS5 (proxyPort)
-     *   -> SSH direct-tcpip -> [JSch via ProxySOCKS5] -> NaiveProxy SOCKS5 (proxyPort+1)
-     *   -> Chrome TLS/HTTP2 CONNECT -> Caddy Server (forwardproxy) -> SSH:22
-     */
-    private suspend fun connectNaiveSsh(profile: app.slipnet.domain.model.ServerProfile, dnsServer: String, remoteDns: String, remoteDnsFallback: String) {
-        val proxyPort = preferencesDataStore.proxyListenPort.first()
-        val proxyHost = preferencesDataStore.proxyListenAddress.first()
-        val naivePort = proxyPort + 1
-
-        if (isProxyOnly) {
-            // Proxy-only: no VPN needed, start NaiveProxy + SSH directly
-            val naiveResult = withContext(Dispatchers.IO) {
-                NaiveBridge.start(
-                    context = this@SlipNetVpnService,
-                    listenPort = naivePort,
-                    listenHost = "127.0.0.1",
-                    serverHost = profile.domain,
-                    serverPort = profile.naivePort,
-                    username = profile.naiveUsername,
-                    password = profile.naivePassword,
-                )
-            }
-            if (naiveResult.isFailure) {
-                connectionManager.onVpnError(naiveResult.exceptionOrNull()?.message ?: "Failed to start NaiveProxy")
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            if (!waitForNaiveReady(maxAttempts = 30, delayMs = 200)) {
-                Log.e(TAG, "NaiveProxy failed to become ready on port $naivePort")
-                connectionManager.onVpnError("NaiveProxy failed to start")
-                NaiveBridge.stop()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            // For NaiveProxy: use server domain instead of 127.0.0.1 as SSH target.
-            // NaiveProxy (Chromium) may bypass the HTTPS proxy for loopback addresses,
-            // causing SOCKS5 CONNECT to 127.0.0.1 to connect locally instead of remotely.
-            val naiveSshHost = if (profile.sshHost == "127.0.0.1" || profile.sshHost.isBlank()) {
-                profile.domain
-            } else {
-                profile.sshHost
-            }
-
-            configureSshBridge()
-            val sshResult = withContext(Dispatchers.IO) {
-                Log.i(TAG, "Starting SSH tunnel through NaiveProxy ($naiveSshHost:${profile.sshPort} via 127.0.0.1:$naivePort)")
-                SshTunnelBridge.startOverSocks5Proxy(
-                    sshHost = naiveSshHost,
-                    sshPort = profile.sshPort,
-                    sshUsername = profile.sshUsername,
-                    sshPassword = profile.sshPassword,
-                    proxyHost = "127.0.0.1",
-                    proxyPort = naivePort,
-                    socksUsername = null,
-                    socksPassword = null,
-                    listenPort = proxyPort,
-                    listenHost = proxyHost,
-                    sshAuthType = profile.sshAuthType,
-                    sshPrivateKey = profile.sshPrivateKey,
-                    sshKeyPassphrase = profile.sshKeyPassphrase,
-                    remoteDnsHost = remoteDns,
-                    remoteDnsFallback = remoteDnsFallback,
-                    naiveMode = true
-                )
-            }
-            if (sshResult.isFailure) {
-                connectionManager.onVpnError(sshResult.exceptionOrNull()?.message ?: "Failed to start SSH tunnel over NaiveProxy")
-                NaiveBridge.stop()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            if (!waitForProxyReady(proxyPort, maxAttempts = 30, delayMs = 100)) {
-                Log.e(TAG, "SSH SOCKS5 proxy failed to become ready")
-                connectionManager.onVpnError("SSH tunnel failed to start over NaiveProxy")
-                SshTunnelBridge.stop()
-                NaiveBridge.stop()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            vpnRepository.setProxyConnected(profile)
-            Log.i(TAG, "Proxy-only mode: NaiveProxy+SSH SOCKS5 proxy ready on $proxyHost:$proxyPort")
-            finishConnection()
-            return
-        }
-
-        // Step 1: Establish VPN interface with addDisallowedApplication
-        vpnInterface = establishVpnInterface(dnsServer)
-        if (vpnInterface == null) {
-            connectionManager.onVpnError("Failed to establish VPN interface")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        delay(200)
-
-        // Step 2: Start NaiveProxy
-        val naiveResult = withContext(Dispatchers.IO) {
-            NaiveBridge.start(
-                context = this@SlipNetVpnService,
-                listenPort = naivePort,
-                listenHost = "127.0.0.1",
-                serverHost = profile.domain,
-                serverPort = profile.naivePort,
-                username = profile.naiveUsername,
-                password = profile.naivePassword
-            )
-        }
-        if (naiveResult.isFailure) {
-            connectionManager.onVpnError(naiveResult.exceptionOrNull()?.message ?: "Failed to start NaiveProxy")
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Wait for NaiveProxy ready (use isReady flag, not TCP connect, to avoid
-        // ERR_SOCKS_CONNECTION_FAILED noise from non-SOCKS5 probe)
-        if (!waitForNaiveReady(maxAttempts = 30, delayMs = 200)) {
-            Log.e(TAG, "NaiveProxy failed to become ready on port $naivePort")
-            connectionManager.onVpnError("NaiveProxy failed to start")
-            NaiveBridge.stop()
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Step 3: SSH over NaiveProxy's SOCKS5
-        // Use server domain instead of 127.0.0.1 to avoid Chromium loopback bypass
-        val naiveSshHost = if (profile.sshHost == "127.0.0.1" || profile.sshHost.isBlank()) {
-            profile.domain
-        } else {
-            profile.sshHost
-        }
-
-        configureSshBridge()
-        val sshResult = withContext(Dispatchers.IO) {
-            Log.i(TAG, "Starting SSH tunnel through NaiveProxy ($naiveSshHost:${profile.sshPort} via 127.0.0.1:$naivePort)")
-            SshTunnelBridge.startOverSocks5Proxy(
-                sshHost = naiveSshHost,
-                sshPort = profile.sshPort,
-                sshUsername = profile.sshUsername,
-                sshPassword = profile.sshPassword,
-                proxyHost = "127.0.0.1",
-                proxyPort = naivePort,
-                socksUsername = null,
-                socksPassword = null,
-                listenPort = proxyPort,
-                listenHost = proxyHost,
-                sshAuthType = profile.sshAuthType,
-                sshPrivateKey = profile.sshPrivateKey,
-                sshKeyPassphrase = profile.sshKeyPassphrase,
-                remoteDnsHost = remoteDns,
-                remoteDnsFallback = remoteDnsFallback,
-                naiveMode = true
-            )
-        }
-        if (sshResult.isFailure) {
-            connectionManager.onVpnError(sshResult.exceptionOrNull()?.message ?: "Failed to start SSH tunnel over NaiveProxy")
-            NaiveBridge.stop()
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Step 3.5: Wait for SSH SOCKS5 proxy to be ready
-        if (!waitForProxyReady(proxyPort, maxAttempts = 30, delayMs = 100)) {
-            Log.e(TAG, "SSH SOCKS5 proxy failed to become ready on port $proxyPort")
-            connectionManager.onVpnError("SSH tunnel failed to start over NaiveProxy")
-            SshTunnelBridge.stop()
-            NaiveBridge.stop()
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Step 4: Start tun2socks
-        val tun2socksResult = vpnRepository.startTun2Socks(profile, vpnInterface!!)
-        if (tun2socksResult.isFailure) {
-            connectionManager.onVpnError(tun2socksResult.exceptionOrNull()?.message ?: "Failed to start tunnel")
-            SshTunnelBridge.stop()
-            NaiveBridge.stop()
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        Log.d(TAG, "NaiveProxy+SSH tunnel started")
-        finishConnection()
-    }
-
-    /**
-     * Connect using standalone NaiveProxy tunnel type.
-     * Order: VPN interface (with addDisallowedApplication) -> NaiveProxy on proxyPort+1
-     *        -> Wait for ready -> NaiveSocksBridge on proxyPort -> tun2socks on proxyPort
-     *
-     * Traffic flow:
-     * App -> TUN -> hev-socks5-tunnel -> NaiveSocksBridge (proxyPort, NO_AUTH)
-     *   TCP CONNECT: -> NaiveProxy SOCKS5 (proxyPort+1, NO_AUTH) -> Caddy HTTPS -> Internet
-     *   DNS FWD_UDP: -> worker pool (SOCKS5 CONNECT through NaiveProxy to DNS) -> DNS-over-TCP
-     */
-    private suspend fun connectNaive(profile: app.slipnet.domain.model.ServerProfile, dnsServer: String, remoteDns: String, remoteDnsFallback: String) {
-        val proxyPort = preferencesDataStore.proxyListenPort.first()
-        val proxyHost = preferencesDataStore.proxyListenAddress.first()
-        val naivePort = proxyPort + 1
-
-        if (isProxyOnly) {
-            // Proxy-only: no VPN needed, start NaiveProxy + bridge directly
-            val naiveResult = withContext(Dispatchers.IO) {
-                NaiveBridge.start(
-                    context = this@SlipNetVpnService,
-                    listenPort = naivePort,
-                    listenHost = "127.0.0.1",
-                    serverHost = profile.domain,
-                    serverPort = profile.naivePort,
-                    username = profile.naiveUsername,
-                    password = profile.naivePassword,
-                )
-            }
-            if (naiveResult.isFailure) {
-                connectionManager.onVpnError(naiveResult.exceptionOrNull()?.message ?: "Failed to start NaiveProxy")
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            if (!waitForNaiveReady(maxAttempts = 30, delayMs = 200)) {
-                Log.e(TAG, "NaiveProxy failed to become ready on port $naivePort")
-                connectionManager.onVpnError("NaiveProxy failed to start")
-                NaiveBridge.stop()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            // Start NaiveSocksBridge on proxyPort
-            val bridgeResult = vpnRepository.startNaiveSocksBridge(
-                naivePort = naivePort,
-                naiveHost = "127.0.0.1",
-                bridgePort = proxyPort,
-                bridgeHost = proxyHost,
-                dnsServer = remoteDns,
-                dnsFallback = remoteDnsFallback
-            )
-            if (bridgeResult.isFailure) {
-                connectionManager.onVpnError(bridgeResult.exceptionOrNull()?.message ?: "Failed to start NaiveProxy bridge")
-                NaiveBridge.stop()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            if (!waitForProxyReady(proxyPort, maxAttempts = 30, delayMs = 100)) {
-                Log.e(TAG, "NaiveSocksBridge failed to become ready on port $proxyPort")
-                connectionManager.onVpnError("NaiveProxy bridge failed to start")
-                NaiveSocksBridge.stop()
-                NaiveBridge.stop()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            vpnRepository.setProxyConnected(profile)
-            Log.i(TAG, "Proxy-only mode: NaiveProxy SOCKS5 proxy ready on $proxyHost:$proxyPort")
-            finishConnection()
-            return
-        }
-
-        // Step 1: Establish VPN interface with addDisallowedApplication
-        vpnInterface = establishVpnInterface(dnsServer)
-        if (vpnInterface == null) {
-            connectionManager.onVpnError("Failed to establish VPN interface")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        delay(200)
-
-        // Step 2: Start NaiveProxy on internal port
-        val naiveResult = withContext(Dispatchers.IO) {
-            NaiveBridge.start(
-                context = this@SlipNetVpnService,
-                listenPort = naivePort,
-                listenHost = "127.0.0.1",
-                serverHost = profile.domain,
-                serverPort = profile.naivePort,
-                username = profile.naiveUsername,
-                password = profile.naivePassword
-            )
-        }
-        if (naiveResult.isFailure) {
-            connectionManager.onVpnError(naiveResult.exceptionOrNull()?.message ?: "Failed to start NaiveProxy")
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        if (!waitForNaiveReady(maxAttempts = 30, delayMs = 200)) {
-            Log.e(TAG, "NaiveProxy failed to become ready on port $naivePort")
-            connectionManager.onVpnError("NaiveProxy failed to start")
-            NaiveBridge.stop()
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Step 3: Start NaiveSocksBridge on proxyPort
-        val bridgeResult = vpnRepository.startNaiveSocksBridge(
-            naivePort = naivePort,
-            naiveHost = "127.0.0.1",
-            bridgePort = proxyPort,
-            bridgeHost = proxyHost,
-            dnsServer = remoteDns,
-            dnsFallback = remoteDnsFallback
-        )
-        if (bridgeResult.isFailure) {
-            connectionManager.onVpnError(bridgeResult.exceptionOrNull()?.message ?: "Failed to start NaiveProxy bridge")
-            NaiveBridge.stop()
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        if (!waitForProxyReady(proxyPort, maxAttempts = 30, delayMs = 100)) {
-            Log.e(TAG, "NaiveSocksBridge failed to become ready on port $proxyPort")
-            connectionManager.onVpnError("NaiveProxy bridge failed to start")
-            NaiveSocksBridge.stop()
-            NaiveBridge.stop()
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Step 4: Start tun2socks
-        val tun2socksResult = vpnRepository.startTun2Socks(profile, vpnInterface!!)
-        if (tun2socksResult.isFailure) {
-            connectionManager.onVpnError(tun2socksResult.exceptionOrNull()?.message ?: "Failed to start tunnel")
-            NaiveSocksBridge.stop()
-            NaiveBridge.stop()
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        Log.d(TAG, "Standalone NaiveProxy tunnel started")
-        finishConnection()
-    }
-
-    /**
      * Connect using DNSTT+SSH tunnel type.
      * Order: Set DNSTT ref -> VPN interface (with app exclusion) -> Start DNSTT -> Wait for DNSTT ready
      *        -> Start SSH over DNSTT proxy -> Wait for SSH ready -> Start tun2socks on proxyPort
@@ -1425,309 +902,6 @@ class SlipNetVpnService : VpnService() {
     }
 
     /**
-     * Connect using DoH (DNS-over-HTTPS) tunnel type.
-     * Order: Establish VPN interface (with app exclusion) -> Start DoH proxy -> Wait for ready -> tun2socks
-     *
-     * Only DNS queries are encrypted via HTTPS. All other traffic flows directly.
-     * Uses addDisallowedApplication so DoH HTTPS requests and direct TCP/UDP bypass VPN.
-     */
-    private suspend fun connectDoh(profile: app.slipnet.domain.model.ServerProfile, dnsServer: String) {
-        val proxyPort = preferencesDataStore.proxyListenPort.first()
-        val proxyHost = preferencesDataStore.proxyListenAddress.first()
-
-        if (isProxyOnly) {
-            // Proxy-only: no VPN needed, start DoH proxy directly
-            val proxyResult = vpnRepository.startDohProxy(profile)
-            if (proxyResult.isFailure) {
-                connectionManager.onVpnError(proxyResult.exceptionOrNull()?.message ?: "Failed to start DoH proxy")
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            if (!waitForProxyReady(proxyPort, maxAttempts = 20, delayMs = 100)) {
-                handleProxyStartupFailure(proxyPort)
-                return
-            }
-
-            vpnRepository.setProxyConnected(profile)
-            Log.i(TAG, "Proxy-only mode: DoH SOCKS5 proxy ready on $proxyHost:$proxyPort")
-            finishConnection()
-            return
-        }
-
-        // Step 1: Establish VPN interface with addDisallowedApplication
-        // Use a virtual DNS address so Android can't DoT to a real server.
-        // All DNS goes through FWD_UDP → DohBridge → DoH HTTPS instead.
-        vpnInterface = establishVpnInterface("10.255.255.2")
-        if (vpnInterface == null) {
-            connectionManager.onVpnError("Failed to establish VPN interface")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Brief delay to let VPN routing settle
-        delay(200)
-
-        // Step 2: Start DoH proxy
-        val proxyResult = vpnRepository.startDohProxy(profile)
-        if (proxyResult.isFailure) {
-            connectionManager.onVpnError(proxyResult.exceptionOrNull()?.message ?: "Failed to start DoH proxy")
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Step 2.5: Verify proxy is listening
-        if (!waitForProxyReady(proxyPort, maxAttempts = 20, delayMs = 100)) {
-            handleProxyStartupFailure(proxyPort)
-            vpnInterface?.close()
-            vpnInterface = null
-            return
-        }
-
-        // Step 3: Start tun2socks
-        val tun2socksResult = vpnRepository.startTun2Socks(profile, vpnInterface!!)
-        if (tun2socksResult.isFailure) {
-            connectionManager.onVpnError(tun2socksResult.exceptionOrNull()?.message ?: "Failed to start tunnel")
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        Log.d(TAG, "DoH tunnel started")
-        finishConnection()
-    }
-
-    /**
-     * Connect using Snowflake (Tor) tunnel type.
-     * Order: VPN interface (virtual DNS, addDisallowedApplication)
-     *        -> Start Snowflake PT + Tor + TorSocksBridge
-     *        -> Wait for Tor bootstrap (60s)
-     *        -> Wait for bridge ready -> tun2socks on bridge port
-     *
-     * Snowflake routes traffic through Tor's network using WebRTC volunteer proxies.
-     * TorSocksBridge handles CONNECT (chain to Tor SOCKS5) and FWD_UDP DNS
-     * (DNS-over-TCP through Tor).
-     */
-    private suspend fun connectSnowflake(profile: app.slipnet.domain.model.ServerProfile, dnsServer: String) {
-        // Route SMART profiles to the Smart Connect orchestrator
-        if (profile.torBridgeLines.trim() == "SMART") {
-            connectSnowflakeSmart(profile, dnsServer)
-            return
-        }
-
-        val proxyPort = preferencesDataStore.proxyListenPort.first()
-        val proxyHost = preferencesDataStore.proxyListenAddress.first()
-        val torSocksPort = proxyPort + 1
-        val snowflakePtPort = proxyPort + 2
-
-        if (isProxyOnly) {
-            // Start proxy stack directly
-            val proxyResult = vpnRepository.startSnowflakeProxy(profile, snowflakePtPort, torSocksPort, proxyPort)
-            if (proxyResult.isFailure) {
-                connectionManager.onVpnError(proxyResult.exceptionOrNull()?.message ?: "Failed to start Snowflake proxy")
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            // Wait for Tor to bootstrap (webtunnel/obfs4 can be slow)
-            if (!waitForTorReady(maxWaitMs = 300000)) {
-                connectionManager.onVpnError("Tor failed to bootstrap within timeout (${SnowflakeBridge.torBootstrapProgress}%)")
-                stopCurrentProxy()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return
-            }
-
-            if (!waitForProxyReady(proxyPort, maxAttempts = 20, delayMs = 100)) {
-                handleProxyStartupFailure(proxyPort)
-                return
-            }
-
-            vpnRepository.setProxyConnected(profile)
-            Log.i(TAG, "Proxy-only mode: Snowflake proxy stack ready on $proxyHost:$proxyPort")
-            finishConnection()
-            return
-        }
-
-        // Step 1: Start Snowflake proxy stack (Snowflake PT + Tor + TorSocksBridge)
-        // VPN interface is NOT established yet — no VPN key icon during bootstrap
-        val proxyResult = vpnRepository.startSnowflakeProxy(profile, snowflakePtPort, torSocksPort, proxyPort)
-        if (proxyResult.isFailure) {
-            connectionManager.onVpnError(proxyResult.exceptionOrNull()?.message ?: "Failed to start Snowflake proxy")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Step 2: Wait for Tor to bootstrap (webtunnel/obfs4 can be slow)
-        Log.i(TAG, "Waiting for Tor to bootstrap...")
-        if (!waitForTorReady(maxWaitMs = 300000)) {
-            connectionManager.onVpnError("Tor failed to bootstrap within timeout (${SnowflakeBridge.torBootstrapProgress}%)")
-            stopCurrentProxy()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-        Log.i(TAG, "Tor bootstrapped successfully")
-
-        // Step 3: Verify bridge is listening
-        if (!waitForProxyReady(proxyPort, maxAttempts = 20, delayMs = 100)) {
-            handleProxyStartupFailure(proxyPort)
-            return
-        }
-
-        // Step 4: Establish VPN interface now that Tor is ready (VPN key icon appears here)
-        vpnInterface = establishVpnInterface("10.255.255.2")
-        if (vpnInterface == null) {
-            connectionManager.onVpnError("Failed to establish VPN interface")
-            stopCurrentProxy()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Brief delay to let VPN routing settle
-        delay(200)
-
-        // Step 5: Start tun2socks pointing at TorSocksBridge port
-        val tun2socksResult = vpnRepository.startTun2Socks(profile, vpnInterface!!)
-        if (tun2socksResult.isFailure) {
-            connectionManager.onVpnError(tun2socksResult.exceptionOrNull()?.message ?: "Failed to start tunnel")
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        Log.d(TAG, "Snowflake tunnel started")
-        finishConnection()
-    }
-
-    /**
-     * Smart Connect: tries multiple Tor transports sequentially until one works.
-     * Transport sequence: Direct → Snowflake → obfs4 → Meek Azure.
-     * On reconnect, SMART profiles fall back to built-in Snowflake (SnowflakeBridge
-     * treats "SMART" sentinel as built-in Snowflake).
-     */
-    private suspend fun connectSnowflakeSmart(profile: app.slipnet.domain.model.ServerProfile, dnsServer: String) {
-        val proxyPort = preferencesDataStore.proxyListenPort.first()
-        val proxyHost = preferencesDataStore.proxyListenAddress.first()
-        val torSocksPort = proxyPort + 1
-        val snowflakePtPort = proxyPort + 2
-
-        data class SmartTransport(val label: String, val bridgeLines: String, val timeoutMs: Long)
-        val transports = listOf(
-            SmartTransport("Direct", "DIRECT", 30000),
-            SmartTransport("Snowflake", "", 60000),
-            SmartTransport("obfs4", app.slipnet.presentation.profiles.EditProfileViewModel.DEFAULT_OBFS4_BRIDGES, 60000),
-            SmartTransport("Meek Azure", app.slipnet.presentation.profiles.EditProfileViewModel.DEFAULT_MEEK_BRIDGE, 60000)
-        )
-
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        var success = false
-
-        for ((index, transport) in transports.withIndex()) {
-            Log.i(TAG, "Smart Connect: Trying ${transport.label} (${index + 1}/${transports.size})")
-
-            // Update notification with current transport attempt
-            val notification = notificationHelper.createSmartConnectNotification(
-                transport.label, index + 1, transports.size
-            )
-            notificationManager.notify(NotificationHelper.VPN_NOTIFICATION_ID, notification)
-
-            // Create modified profile with this transport's bridge lines
-            val modifiedProfile = profile.copy(torBridgeLines = transport.bridgeLines)
-
-            // Try starting proxy stack
-            val proxyResult = vpnRepository.startSnowflakeProxy(modifiedProfile, snowflakePtPort, torSocksPort, proxyPort)
-            if (proxyResult.isFailure) {
-                Log.w(TAG, "Smart Connect: ${transport.label} proxy start failed: ${proxyResult.exceptionOrNull()?.message}")
-                continue
-            }
-
-            // Wait for Tor to bootstrap with transport-specific timeout
-            if (waitForTorReady(maxWaitMs = transport.timeoutMs)) {
-                if (waitForProxyReady(proxyPort, maxAttempts = 20, delayMs = 100)) {
-                    Log.i(TAG, "Smart Connect: ${transport.label} succeeded!")
-                    success = true
-                    break
-                }
-            }
-
-            // This transport failed — stop proxy stack and try the next one
-            Log.w(TAG, "Smart Connect: ${transport.label} failed (bootstrap: ${SnowflakeBridge.torBootstrapProgress}%)")
-            TorSocksBridge.stop()
-            SnowflakeBridge.stopClient()
-        }
-
-        if (!success) {
-            connectionManager.onVpnError("Smart Connect: All transports failed")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        if (isProxyOnly) {
-            vpnRepository.setProxyConnected(profile)
-            Log.i(TAG, "Proxy-only mode: Smart Connect proxy stack ready on $proxyHost:$proxyPort")
-            finishConnection()
-            return
-        }
-
-        // Establish VPN interface now that a transport succeeded (VPN key icon appears here)
-        vpnInterface = establishVpnInterface("10.255.255.2")
-        if (vpnInterface == null) {
-            connectionManager.onVpnError("Failed to establish VPN interface")
-            stopCurrentProxy()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        // Brief delay to let VPN routing settle
-        delay(200)
-
-        // Start tun2socks pointing at TorSocksBridge port
-        val tun2socksResult = vpnRepository.startTun2Socks(profile, vpnInterface!!)
-        if (tun2socksResult.isFailure) {
-            connectionManager.onVpnError(tun2socksResult.exceptionOrNull()?.message ?: "Failed to start tunnel")
-            vpnInterface?.close()
-            vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
-
-        Log.d(TAG, "Smart Connect tunnel started")
-        finishConnection()
-    }
-
-    /**
-     * Wait for Tor to finish bootstrapping (isTorReady == true).
-     */
-    private suspend fun waitForTorReady(maxWaitMs: Long = 90000): Boolean {
-        val startTime = System.currentTimeMillis()
-        while (System.currentTimeMillis() - startTime < maxWaitMs) {
-            if (SnowflakeBridge.isTorReady) return true
-            if (!SnowflakeBridge.isRunning()) {
-                Log.e(TAG, "Snowflake/Tor died during bootstrap")
-                return false
-            }
-            delay(1000)
-        }
-        return SnowflakeBridge.isTorReady
-    }
-
-    /**
      * Handle proxy startup failure - common to both tunnel types.
      */
     private suspend fun handleProxyStartupFailure(port: Int) {
@@ -1735,12 +909,7 @@ class SlipNetVpnService : VpnService() {
             TunnelType.SLIPSTREAM -> try { SlipstreamBridge.isNativeRunning() } catch (e: Exception) { false }
             TunnelType.SLIPSTREAM_SSH -> try { SlipstreamBridge.isNativeRunning() } catch (e: Exception) { false }
             TunnelType.DNSTT -> try { DnsttBridge.isRunning() } catch (e: Exception) { false }
-            TunnelType.SSH -> SshTunnelBridge.isRunning()
             TunnelType.DNSTT_SSH -> try { DnsttBridge.isRunning() } catch (e: Exception) { false }
-            TunnelType.DOH -> DohBridge.isRunning()
-            TunnelType.NAIVE_SSH -> NaiveBridge.isRunning()
-            TunnelType.NAIVE -> NaiveBridge.isRunning()
-            TunnelType.SNOWFLAKE -> SnowflakeBridge.isRunning()
         }
         Log.e(TAG, "Proxy failed to become ready on port $port, nativeRunning=$nativeRunning")
 
@@ -1881,17 +1050,12 @@ class SlipNetVpnService : VpnService() {
                         Log.e(TAG, "Error checking DNSTT state: ${e.message}")
                         true // Assume it's running if we can't check
                     }
-                    TunnelType.SSH -> SshTunnelBridge.isRunning()
                     TunnelType.DNSTT_SSH -> try {
                         DnsttBridge.isRunning()
                     } catch (e: Exception) {
                         Log.e(TAG, "Error checking DNSTT state: ${e.message}")
                         true
                     }
-                    TunnelType.DOH -> DohBridge.isRunning()
-                    TunnelType.NAIVE_SSH -> NaiveBridge.isRunning()
-                    TunnelType.NAIVE -> NaiveBridge.isRunning()
-                    TunnelType.SNOWFLAKE -> SnowflakeBridge.isRunning()
                 }
 
                 if (!nativeRunning) {
@@ -1923,33 +1087,6 @@ class SlipNetVpnService : VpnService() {
             }
 
             Log.e(TAG, "Proxy failed to become ready after $maxAttempts attempts (${maxAttempts * delayMs}ms)")
-            false
-        }
-    }
-
-    /**
-     * Wait for NaiveProxy to report readiness via its "Listening on" log line.
-     * Unlike waitForProxyReady (which opens a TCP connection), this checks the
-     * NaiveBridge.isReady flag set by the output reader thread. This avoids
-     * sending a non-SOCKS5 probe that causes ERR_SOCKS_CONNECTION_FAILED noise.
-     */
-    private suspend fun waitForNaiveReady(maxAttempts: Int = 30, delayMs: Long = 200): Boolean {
-        Log.d(TAG, "Waiting for NaiveProxy to become ready (max ${maxAttempts * delayMs}ms)")
-        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            repeat(maxAttempts) { attempt ->
-                if (!NaiveBridge.isRunning()) {
-                    Log.e(TAG, "NaiveProxy process died during startup (attempt ${attempt + 1})")
-                    return@withContext false
-                }
-                if (NaiveBridge.isReady) {
-                    Log.i(TAG, "NaiveProxy ready after ${attempt + 1} attempts (${(attempt + 1) * delayMs}ms)")
-                    return@withContext true
-                }
-                if (attempt < maxAttempts - 1) {
-                    Thread.sleep(delayMs)
-                }
-            }
-            Log.e(TAG, "NaiveProxy failed to become ready after $maxAttempts attempts")
             false
         }
     }
@@ -2015,10 +1152,8 @@ class SlipNetVpnService : VpnService() {
                 // remote end is gone (NAT timeout, server crash). sendKeepAliveMsg()
                 // forces a round-trip that detects a dead session immediately.
                 healthCheckCount++
-                val usesSsh = currentTunnelType == TunnelType.SSH ||
-                        currentTunnelType == TunnelType.DNSTT_SSH ||
-                        currentTunnelType == TunnelType.SLIPSTREAM_SSH ||
-                        currentTunnelType == TunnelType.NAIVE_SSH
+                val usesSsh = currentTunnelType == TunnelType.DNSTT_SSH ||
+                        currentTunnelType == TunnelType.SLIPSTREAM_SSH
                 if (usesSsh && healthCheckCount % SSH_PROBE_INTERVAL == 0) {
                     val alive = SshTunnelBridge.probeSessionAlive()
                     if (!alive) {
@@ -2230,38 +1365,7 @@ class SlipNetVpnService : VpnService() {
                 }
 
                 // Restart the appropriate proxy
-                if (currentTunnelType == TunnelType.SSH) {
-                    // SSH-only: restart SSH tunnel directly
-                    configureSshBridge()
-                    val sshResult = withContext(Dispatchers.IO) {
-                        SshTunnelBridge.startDirect(
-                            tunnelHost = profile.domain,
-                            tunnelPort = profile.sshPort,
-                            sshUsername = profile.sshUsername,
-                            sshPassword = profile.sshPassword,
-                            listenPort = proxyPort,
-                            listenHost = proxyHost,
-                            forwardDnsThroughSsh = true,
-                            sshAuthType = profile.sshAuthType,
-                            sshPrivateKey = profile.sshPrivateKey,
-                            sshKeyPassphrase = profile.sshKeyPassphrase,
-                            remoteDnsHost = remoteDns,
-                            remoteDnsFallback = remoteDnsFallback
-                        )
-                    }
-                    if (sshResult.isFailure) {
-                        Log.e(TAG, "Failed to restart SSH tunnel after network change", sshResult.exceptionOrNull())
-                        handleTunnelFailure("failed to reconnect SSH after network change")
-                        return@launch
-                    }
-
-                    // Wait for SSH SOCKS5 proxy to be ready
-                    if (!waitForProxyReady(proxyPort, maxAttempts = 30, delayMs = 50)) {
-                        Log.e(TAG, "SSH SOCKS5 proxy failed to restart")
-                        handleTunnelFailure("failed to reconnect SSH after network change")
-                        return@launch
-                    }
-                } else if (currentTunnelType == TunnelType.DNSTT_SSH) {
+                if (currentTunnelType == TunnelType.DNSTT_SSH) {
                     // DNSTT+SSH: restart DNSTT on internal port, then SSH on proxyPort
                     val dnsttPort = proxyPort + 1
 
@@ -2448,139 +1552,6 @@ class SlipNetVpnService : VpnService() {
                         handleTunnelFailure("failed to reconnect DNSTT after network change")
                         return@launch
                     }
-                } else if (currentTunnelType == TunnelType.NAIVE_SSH) {
-                    // NaiveProxy+SSH: restart NaiveProxy on internal port, then SSH on proxyPort
-                    val naivePort = proxyPort + 1
-
-                    val naiveResult = withContext(Dispatchers.IO) {
-                        NaiveBridge.start(
-                            context = this@SlipNetVpnService,
-                            listenPort = naivePort,
-                            listenHost = "127.0.0.1",
-                            serverHost = profile.domain,
-                            serverPort = profile.naivePort,
-                            username = profile.naiveUsername,
-                            password = profile.naivePassword,
-                                )
-                    }
-                    if (naiveResult.isFailure) {
-                        Log.e(TAG, "Failed to restart NaiveProxy after network change", naiveResult.exceptionOrNull())
-                        handleTunnelFailure("failed to reconnect NaiveProxy+SSH after network change")
-                        return@launch
-                    }
-
-                    if (!waitForNaiveReady(maxAttempts = 30, delayMs = 200)) {
-                        Log.e(TAG, "NaiveProxy failed to become ready after network change")
-                        handleTunnelFailure("failed to reconnect NaiveProxy+SSH after network change")
-                        return@launch
-                    }
-
-                    val naiveSshHost = if (profile.sshHost == "127.0.0.1" || profile.sshHost.isBlank()) {
-                        profile.domain
-                    } else {
-                        profile.sshHost
-                    }
-
-                    configureSshBridge()
-                    val sshResult = withContext(Dispatchers.IO) {
-                        SshTunnelBridge.startOverSocks5Proxy(
-                            sshHost = naiveSshHost,
-                            sshPort = profile.sshPort,
-                            sshUsername = profile.sshUsername,
-                            sshPassword = profile.sshPassword,
-                            proxyHost = "127.0.0.1",
-                            proxyPort = naivePort,
-                            socksUsername = null,
-                            socksPassword = null,
-                            listenPort = proxyPort,
-                            listenHost = proxyHost,
-                            sshAuthType = profile.sshAuthType,
-                            sshPrivateKey = profile.sshPrivateKey,
-                            sshKeyPassphrase = profile.sshKeyPassphrase,
-                            remoteDnsHost = remoteDns,
-                            remoteDnsFallback = remoteDnsFallback,
-                            naiveMode = true
-                        )
-                    }
-                    if (sshResult.isFailure) {
-                        Log.e(TAG, "Failed to restart SSH over NaiveProxy after network change", sshResult.exceptionOrNull())
-                        handleTunnelFailure("failed to reconnect NaiveProxy+SSH after network change")
-                        return@launch
-                    }
-
-                    if (!waitForProxyReady(proxyPort, maxAttempts = 30, delayMs = 50)) {
-                        Log.e(TAG, "SSH SOCKS5 proxy failed to restart on port $proxyPort")
-                        handleTunnelFailure("failed to reconnect NaiveProxy+SSH after network change")
-                        return@launch
-                    }
-                } else if (currentTunnelType == TunnelType.NAIVE) {
-                    // Standalone NaiveProxy: restart NaiveProxy on internal port, then bridge on proxyPort
-                    val naivePort = proxyPort + 1
-
-                    val naiveResult = withContext(Dispatchers.IO) {
-                        NaiveBridge.start(
-                            context = this@SlipNetVpnService,
-                            listenPort = naivePort,
-                            listenHost = "127.0.0.1",
-                            serverHost = profile.domain,
-                            serverPort = profile.naivePort,
-                            username = profile.naiveUsername,
-                            password = profile.naivePassword,
-                        )
-                    }
-                    if (naiveResult.isFailure) {
-                        Log.e(TAG, "Failed to restart NaiveProxy after network change", naiveResult.exceptionOrNull())
-                        handleTunnelFailure("failed to reconnect NaiveProxy after network change")
-                        return@launch
-                    }
-
-                    if (!waitForNaiveReady(maxAttempts = 30, delayMs = 200)) {
-                        Log.e(TAG, "NaiveProxy failed to become ready after network change")
-                        handleTunnelFailure("failed to reconnect NaiveProxy after network change")
-                        return@launch
-                    }
-
-                    val bridgeResult = vpnRepository.startNaiveSocksBridge(
-                        naivePort = naivePort,
-                        naiveHost = "127.0.0.1",
-                        bridgePort = proxyPort,
-                        bridgeHost = proxyHost,
-                        dnsServer = remoteDns,
-                        dnsFallback = remoteDnsFallback
-                    )
-                    if (bridgeResult.isFailure) {
-                        Log.e(TAG, "Failed to restart NaiveSocksBridge after network change")
-                        handleTunnelFailure("failed to reconnect NaiveProxy after network change")
-                        return@launch
-                    }
-
-                    if (!waitForProxyReady(proxyPort, maxAttempts = 30, delayMs = 50)) {
-                        Log.e(TAG, "NaiveSocksBridge failed to restart on port $proxyPort")
-                        handleTunnelFailure("failed to reconnect NaiveProxy after network change")
-                        return@launch
-                    }
-                } else {
-                    val proxyResult = when (currentTunnelType) {
-                        TunnelType.DOH -> vpnRepository.startDohProxy(profile)
-                        TunnelType.SNOWFLAKE -> {
-                            val torSocksPort = proxyPort + 1
-                            val snowflakePtPort = proxyPort + 2
-                            vpnRepository.startSnowflakeProxy(profile, snowflakePtPort, torSocksPort, proxyPort)
-                        }
-                        else -> Result.success(Unit) // handled above
-                    }
-                    if (proxyResult.isFailure) {
-                        Log.e(TAG, "Failed to restart proxy after network change", proxyResult.exceptionOrNull())
-                        handleTunnelFailure("failed to reconnect after network change")
-                        return@launch
-                    }
-
-                    // Wait for proxy to be ready
-                    if (!waitForProxyReady(proxyPort, maxAttempts = 20, delayMs = 50)) {
-                        Log.e(TAG, "Proxy failed to restart")
-                        handleTunnelFailure("failed to reconnect after network change")
-                        return@launch
-                    }
                 }
 
                 // Restart tun2socks with existing VPN interface (skip in proxy-only mode)
@@ -2600,25 +1571,9 @@ class SlipNetVpnService : VpnService() {
                 }
 
                 // Wait for tunnel to be re-established
-                if (currentTunnelType == TunnelType.SLIPSTREAM) {
-                    // QUIC wait already done during Slipstream reconnection above
-                    delay(500)
-                } else if (currentTunnelType == TunnelType.SLIPSTREAM_SSH) {
-                    // QUIC wait already done during Slipstream+SSH reconnection above
-                    delay(500)
-                } else if (currentTunnelType == TunnelType.SNOWFLAKE) {
-                    // Wait for Tor to re-bootstrap after network change
-                    if (!waitForTorReady(maxWaitMs = 90000)) {
-                        Log.e(TAG, "Tor failed to re-bootstrap after network change")
-                        handleTunnelFailure("Tor failed to reconnect after network change")
-                        return@launch
-                    }
-                } else if (currentTunnelType == TunnelType.NAIVE_SSH || currentTunnelType == TunnelType.NAIVE) {
-                    delay(500)
-                } else {
-                    // For DNSTT/DNSTT+SSH, give it a moment to re-establish
-                    delay(500)
-                }
+                // QUIC wait already done during Slipstream reconnection above;
+                // for DNSTT/DNSTT+SSH, give it a moment to re-establish
+                delay(500)
 
                 // Restart HTTP proxy if it was running before (stopped by stopCurrentProxy)
                 if (!HttpProxyServer.isRunning()) {
@@ -2689,33 +1644,10 @@ class SlipNetVpnService : VpnService() {
                 DnsttSocksBridge.stop()
                 DnsttBridge.stopClient()
             }
-            TunnelType.SSH -> {
-                Log.d(TAG, "Stopping SSH tunnel")
-                SshTunnelBridge.stop()
-            }
             TunnelType.DNSTT_SSH -> {
                 Log.d(TAG, "Stopping DNSTT+SSH: SSH first, then DNSTT")
                 SshTunnelBridge.stop()
                 DnsttBridge.stopClient()
-            }
-            TunnelType.DOH -> {
-                Log.d(TAG, "Stopping DoH proxy")
-                DohBridge.stop()
-            }
-            TunnelType.NAIVE_SSH -> {
-                Log.d(TAG, "Stopping NaiveProxy+SSH: SSH first, then NaiveProxy")
-                SshTunnelBridge.stop()
-                NaiveBridge.stop()
-            }
-            TunnelType.NAIVE -> {
-                Log.d(TAG, "Stopping standalone NaiveProxy: bridge first, then NaiveProxy")
-                NaiveSocksBridge.stop()
-                NaiveBridge.stop()
-            }
-            TunnelType.SNOWFLAKE -> {
-                Log.d(TAG, "Stopping Snowflake: TorSocksBridge first, then Snowflake+Tor")
-                TorSocksBridge.stop()
-                SnowflakeBridge.stopClient()
             }
         }
     }
@@ -2728,12 +1660,7 @@ class SlipNetVpnService : VpnService() {
             TunnelType.SLIPSTREAM -> { SlipstreamBridge.proxyOnlyMode = false; SlipstreamBridge.setVpnService(null) }
             TunnelType.SLIPSTREAM_SSH -> { SlipstreamBridge.proxyOnlyMode = false; SlipstreamBridge.setVpnService(null) }
             TunnelType.DNSTT -> DnsttBridge.setVpnService(null)
-            TunnelType.SSH -> { /* SSH-only: no bridge reference to clear */ }
             TunnelType.DNSTT_SSH -> DnsttBridge.setVpnService(null)
-            TunnelType.DOH -> { /* DOH: no bridge reference to clear */ }
-            TunnelType.NAIVE_SSH -> { /* NaiveProxy+SSH: no bridge reference to clear */ }
-            TunnelType.NAIVE -> { /* NaiveProxy standalone: no bridge reference to clear */ }
-            TunnelType.SNOWFLAKE -> { /* Snowflake: no bridge reference to clear */ }
         }
     }
 
@@ -2751,12 +1678,7 @@ class SlipNetVpnService : VpnService() {
             TunnelType.SLIPSTREAM -> SlipstreamBridge.isClientHealthy() && SlipstreamSocksBridge.isClientHealthy()
             TunnelType.SLIPSTREAM_SSH -> SlipstreamBridge.isClientHealthy() && SshTunnelBridge.isClientHealthy()
             TunnelType.DNSTT -> DnsttBridge.isClientHealthy() && DnsttSocksBridge.isClientHealthy()
-            TunnelType.SSH -> SshTunnelBridge.isClientHealthy()
             TunnelType.DNSTT_SSH -> DnsttBridge.isClientHealthy() && SshTunnelBridge.isClientHealthy()
-            TunnelType.DOH -> DohBridge.isClientHealthy()
-            TunnelType.NAIVE_SSH -> NaiveBridge.isClientHealthy() && SshTunnelBridge.isClientHealthy()
-            TunnelType.NAIVE -> NaiveBridge.isClientHealthy() && NaiveSocksBridge.isClientHealthy()
-            TunnelType.SNOWFLAKE -> SnowflakeBridge.isClientHealthy() && TorSocksBridge.isClientHealthy()
         }
     }
 
@@ -2769,14 +1691,8 @@ class SlipNetVpnService : VpnService() {
             .addDnsServer(dnsServer)
             .setBlocking(false)
 
-        val needsSelfExclusion = currentTunnelType == TunnelType.DNSTT ||
-                currentTunnelType == TunnelType.SSH ||
-                currentTunnelType == TunnelType.DNSTT_SSH ||
-                currentTunnelType == TunnelType.DOH ||
-                currentTunnelType == TunnelType.SLIPSTREAM ||
-                currentTunnelType == TunnelType.NAIVE_SSH ||
-                currentTunnelType == TunnelType.NAIVE ||
-                currentTunnelType == TunnelType.SNOWFLAKE
+        // All tunnel types need self-exclusion to protect their sockets from routing loops
+        val needsSelfExclusion = true
 
         val splitEnabled = preferencesDataStore.splitTunnelingEnabled.first()
         val splitMode = preferencesDataStore.splitTunnelingMode.first()

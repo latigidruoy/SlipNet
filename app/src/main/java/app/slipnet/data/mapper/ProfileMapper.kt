@@ -52,12 +52,8 @@ class ProfileMapper @Inject constructor(
             sshAuthType = SshAuthType.fromValue(entity.sshAuthType),
             sshPrivateKey = entity.sshPrivateKey,
             sshKeyPassphrase = entity.sshKeyPassphrase,
-            torBridgeLines = entity.torBridgeLines,
             sortOrder = entity.sortOrder,
             dnsttAuthoritative = entity.dnsttAuthoritative,
-            naivePort = entity.naivePort,
-            naiveUsername = entity.naiveUsername,
-            naivePassword = entity.naivePassword,
             isLocked = entity.isLocked,
             lockPasswordHash = entity.lockPasswordHash
         )
@@ -84,7 +80,7 @@ class ProfileMapper @Inject constructor(
             updatedAt = profile.updatedAt,
             tunnelType = profile.tunnelType.value,
             dnsttPublicKey = profile.dnsttPublicKey,
-            sshEnabled = profile.tunnelType == TunnelType.SSH || profile.tunnelType == TunnelType.DNSTT_SSH || profile.tunnelType == TunnelType.SLIPSTREAM_SSH || profile.tunnelType == TunnelType.NAIVE_SSH,
+            sshEnabled = profile.tunnelType == TunnelType.DNSTT_SSH || profile.tunnelType == TunnelType.SLIPSTREAM_SSH,
             sshUsername = profile.sshUsername,
             sshPassword = profile.sshPassword,
             sshPort = profile.sshPort,
@@ -96,12 +92,8 @@ class ProfileMapper @Inject constructor(
             sshAuthType = profile.sshAuthType.value,
             sshPrivateKey = profile.sshPrivateKey,
             sshKeyPassphrase = profile.sshKeyPassphrase,
-            torBridgeLines = profile.torBridgeLines,
             sortOrder = profile.sortOrder,
             dnsttAuthoritative = profile.dnsttAuthoritative,
-            naivePort = profile.naivePort,
-            naiveUsername = profile.naiveUsername,
-            naivePassword = profile.naivePassword,
             isLocked = profile.isLocked,
             lockPasswordHash = profile.lockPasswordHash
         )

@@ -117,7 +117,6 @@ import app.slipnet.domain.model.ServerProfile
 import app.slipnet.domain.model.TrafficStats
 import app.slipnet.presentation.common.components.ProfileListItem
 import app.slipnet.presentation.common.components.QrCodeDialog
-import app.slipnet.presentation.common.icons.TorIcon
 import app.slipnet.presentation.home.DebugLogSheet
 import app.slipnet.presentation.scanner.QrScannerActivity
 import androidx.compose.material.icons.filled.Timer
@@ -253,9 +252,6 @@ fun MainScreen(
 
     val navBarPadding = WindowInsets.navigationBars.asPaddingValues()
 
-    val showTorProgressFab = uiState.connectionState is ConnectionState.Connecting &&
-            uiState.snowflakeBootstrapProgress in 0..99
-
     val sleepTimerActive = uiState.connectionState is ConnectionState.Connected &&
             uiState.sleepTimerRemainingSeconds > 0
 
@@ -263,7 +259,6 @@ fun MainScreen(
         targetValue = when {
             uiState.connectionState is ConnectionState.Connected && sleepTimerActive -> 52.dp
             uiState.connectionState is ConnectionState.Connected -> 28.dp
-            showTorProgressFab -> 30.dp
             else -> 0.dp
         },
         animationSpec = tween(300),
@@ -431,42 +426,6 @@ fun MainScreen(
                                     onNavigateToAddProfile("slipstream")
                                 }
                             )
-                            AddMenuOption(
-                                icon = Icons.Default.Lock,
-                                title = "SSH",
-                                description = "Direct SSH tunnel",
-                                onClick = {
-                                    showAddMenu = false
-                                    onNavigateToAddProfile("ssh")
-                                }
-                            )
-                            AddMenuOption(
-                                icon = Icons.Default.Language,
-                                title = "DOH",
-                                description = "DNS over HTTPS",
-                                onClick = {
-                                    showAddMenu = false
-                                    onNavigateToAddProfile("doh")
-                                }
-                            )
-                            AddMenuOption(
-                                icon = Icons.Default.Shield,
-                                title = "NaiveProxy",
-                                description = "Chromium HTTPS tunnel",
-                                onClick = {
-                                    showAddMenu = false
-                                    onNavigateToAddProfile("naive")
-                                }
-                            )
-                            AddMenuOption(
-                                icon = TorIcon,
-                                title = "Tor",
-                                description = "Connect via Tor network",
-                                onClick = {
-                                    showAddMenu = false
-                                    onNavigateToAddProfile("snowflake")
-                                }
-                            )
                         }
                     }
                 }
@@ -484,7 +443,6 @@ fun MainScreen(
                 ConnectFab(
                     connectionState = uiState.connectionState,
                     hasProfile = uiState.activeProfile != null || uiState.profiles.isNotEmpty(),
-                    snowflakeBootstrapProgress = uiState.snowflakeBootstrapProgress,
                     onToggleConnection = { requestConnectOrToggle() },
                     modifier = Modifier.padding(
                         bottom = 24.dp + navBarPadding.calculateBottomPadding() + fabExtraPadding,
@@ -605,7 +563,6 @@ fun MainScreen(
                 connectionState = uiState.connectionState,
                 activeProfile = uiState.activeProfile,
                 isProxyOnly = uiState.proxyOnlyMode,
-                snowflakeBootstrapProgress = uiState.snowflakeBootstrapProgress,
                 uploadSpeed = uiState.uploadSpeed,
                 downloadSpeed = uiState.downloadSpeed,
                 totalUpload = uiState.trafficStats.bytesSent,
@@ -980,7 +937,6 @@ private fun ConnectionStatusStrip(
     connectionState: ConnectionState,
     activeProfile: ServerProfile?,
     isProxyOnly: Boolean,
-    snowflakeBootstrapProgress: Int,
     uploadSpeed: Long = 0,
     downloadSpeed: Long = 0,
     totalUpload: Long = 0,
@@ -993,8 +949,6 @@ private fun ConnectionStatusStrip(
     val isConnecting = connectionState is ConnectionState.Connecting ||
             connectionState is ConnectionState.Disconnecting
     val isError = connectionState is ConnectionState.Error
-    val showTorProgress = connectionState is ConnectionState.Connecting &&
-            snowflakeBootstrapProgress in 0..99
 
     val statusColor by animateColorAsState(
         targetValue = when {
@@ -1143,36 +1097,6 @@ private fun ConnectionStatusStrip(
                 }
             }
 
-            // Tor bootstrap progress
-            AnimatedVisibility(
-                visible = showTorProgress,
-                enter = expandVertically(animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)),
-                exit = shrinkVertically(animationSpec = tween(200)) + fadeOut(animationSpec = tween(200))
-            ) {
-                Column {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        LinearProgressIndicator(
-                            progress = { snowflakeBootstrapProgress / 100f },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = ConnectingOrange,
-                            trackColor = ConnectingOrange.copy(alpha = 0.2f),
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Tor: $snowflakeBootstrapProgress%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = ConnectingOrange
-                        )
-                    }
-                }
-            }
         }
     }
 }
@@ -1187,7 +1111,6 @@ private fun formatCountdown(totalSeconds: Int): String {
 private fun ConnectFab(
     connectionState: ConnectionState,
     hasProfile: Boolean,
-    snowflakeBootstrapProgress: Int,
     onToggleConnection: () -> Unit,
     modifier: Modifier = Modifier
 ) {

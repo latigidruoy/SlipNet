@@ -187,7 +187,7 @@ object HevSocks5Tunnel {
         sb.appendLine("  address: $socksAddress")
         sb.appendLine("  port: $socksPort")
         // UDP tunneling via 'tcp' mode sends FWD_UDP (cmd 0x05) to the SOCKS5 proxy.
-        // Supported by: SSH SOCKS5, DohBridge, SlipstreamSocksBridge, DNSTT (remote Dante).
+        // Supported by: SSH SOCKS5, SlipstreamSocksBridge, DNSTT (remote Dante).
         if (enableUdpTunneling) {
             sb.appendLine("  udp: 'tcp'")
         }

@@ -15,7 +15,7 @@ import javax.inject.Singleton
  * Multiple profiles: one URI per line
  *
  * Encoded profile format v15 (pipe-delimited):
- * v15|tunnelType|name|domain|resolvers|authMode|keepAlive|cc|port|host|gso|dnsttPublicKey|socksUsername|socksPassword|sshEnabled|sshUsername|sshPassword|sshPort|forwardDnsThroughSsh|sshHost|useServerDns|dohUrl|dnsTransport|sshAuthType|sshPrivateKey(b64)|sshKeyPassphrase(b64)|torBridgeLines(b64)|dnsttAuthoritative|naivePort|naiveUsername|naivePassword(b64)|isLocked|lockPasswordHash
+ * v15|tunnelType|name|domain|resolvers|authMode|keepAlive|cc|port|host|gso|dnsttPublicKey|socksUsername|socksPassword|sshEnabled|sshUsername|sshPassword|sshPort|forwardDnsThroughSsh|sshHost|useServerDns(removed)|dohUrl(removed)|dnsTransport|sshAuthType|sshPrivateKey(b64)|sshKeyPassphrase(b64)|torBridgeLines(removed)|dnsttAuthoritative|naivePort(removed)|naiveUsername(removed)|naivePassword(removed)|isLocked|lockPasswordHash
  *
  * Resolvers format (comma-separated): host:port:auth,host:port:auth
  */
@@ -30,11 +30,6 @@ class ConfigExporter @Inject constructor() {
         const val MODE_SLIPSTREAM_SSH = "slipstream_ssh"
         const val MODE_DNSTT = "dnstt"
         const val MODE_DNSTT_SSH = "dnstt_ssh"
-        const val MODE_SSH = "ssh"
-        const val MODE_DOH = "doh"
-        const val MODE_SNOWFLAKE = "snowflake"
-        const val MODE_NAIVE_SSH = "naive_ssh"
-        const val MODE_NAIVE = "naive"
         private const val FIELD_DELIMITER = "|"
         private const val RESOLVER_DELIMITER = ","
         private const val RESOLVER_PART_DELIMITER = ":"
@@ -69,11 +64,6 @@ class ConfigExporter @Inject constructor() {
             TunnelType.SLIPSTREAM_SSH -> MODE_SLIPSTREAM_SSH
             TunnelType.DNSTT -> MODE_DNSTT
             TunnelType.DNSTT_SSH -> MODE_DNSTT_SSH
-            TunnelType.SSH -> MODE_SSH
-            TunnelType.DOH -> MODE_DOH
-            TunnelType.SNOWFLAKE -> MODE_SNOWFLAKE
-            TunnelType.NAIVE_SSH -> MODE_NAIVE_SSH
-            TunnelType.NAIVE -> MODE_NAIVE
         }
 
         return listOf(
@@ -91,23 +81,23 @@ class ConfigExporter @Inject constructor() {
             profile.dnsttPublicKey,
             profile.socksUsername ?: "",
             profile.socksPassword ?: "",
-            if (profile.tunnelType == TunnelType.SSH || profile.tunnelType == TunnelType.DNSTT_SSH || profile.tunnelType == TunnelType.SLIPSTREAM_SSH || profile.tunnelType == TunnelType.NAIVE_SSH) "1" else "0",
+            if (profile.tunnelType == TunnelType.DNSTT_SSH || profile.tunnelType == TunnelType.SLIPSTREAM_SSH) "1" else "0",
             profile.sshUsername,
             profile.sshPassword,
             profile.sshPort.toString(),
             "0",
             profile.sshHost,
             "0", // position 20: was useServerDns (removed)
-            profile.dohUrl,
+            "", // position 21: was dohUrl (removed)
             profile.dnsTransport.value,
             profile.sshAuthType.value,
             Base64.encodeToString(profile.sshPrivateKey.toByteArray(Charsets.UTF_8), Base64.NO_WRAP),
             Base64.encodeToString(profile.sshKeyPassphrase.toByteArray(Charsets.UTF_8), Base64.NO_WRAP),
-            Base64.encodeToString(profile.torBridgeLines.toByteArray(Charsets.UTF_8), Base64.NO_WRAP),
+            "", // position 26: was torBridgeLines (removed)
             if (profile.dnsttAuthoritative) "1" else "0",
-            profile.naivePort.toString(),
-            profile.naiveUsername,
-            Base64.encodeToString(profile.naivePassword.toByteArray(Charsets.UTF_8), Base64.NO_WRAP),
+            "0", // position 28: was naivePort (removed)
+            "", // position 29: was naiveUsername (removed)
+            "", // position 30: was naivePassword (removed)
             if (profile.isLocked) "1" else "0",
             profile.lockPasswordHash
         ).joinToString(FIELD_DELIMITER)

@@ -11,21 +11,15 @@ import app.slipnet.domain.model.TunnelType
 import app.slipnet.domain.repository.VpnRepository
 import app.slipnet.tunnel.DnsDoHProxy
 import app.slipnet.tunnel.DnsttBridge
-import app.slipnet.tunnel.DohBridge
 import app.slipnet.tunnel.HevSocks5Tunnel
 import app.slipnet.tunnel.ResolverConfig
 import app.slipnet.tunnel.SlipstreamBridge
 import app.slipnet.tunnel.DnsttSocksBridge
 import app.slipnet.tunnel.SlipstreamSocksBridge
-import app.slipnet.tunnel.NaiveBridge
-import app.slipnet.tunnel.NaiveSocksBridge
-import app.slipnet.tunnel.SnowflakeBridge
 import app.slipnet.tunnel.SshTunnelBridge
-import app.slipnet.tunnel.TorSocksBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -178,34 +172,6 @@ class VpnRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Start the DoH SOCKS5 proxy. Call this AFTER establishing the VPN interface.
-     * DNS queries are encrypted via HTTPS; all other traffic flows directly.
-     */
-    suspend fun startDohProxy(profile: ServerProfile): Result<Unit> = withContext(Dispatchers.IO) {
-        connectedProfile = profile
-
-        val proxyPort = preferencesDataStore.proxyListenPort.first()
-        val proxyHost = preferencesDataStore.proxyListenAddress.first()
-
-        val result = DohBridge.start(
-            dohUrl = profile.dohUrl,
-            listenPort = proxyPort,
-            listenHost = proxyHost
-        )
-
-        if (result.isSuccess) {
-            Log.i(TAG, "DoH SOCKS5 proxy started successfully")
-            currentTunnelType = TunnelType.DOH
-            Result.success(Unit)
-        } else {
-            val error = result.exceptionOrNull()?.message ?: "Failed to start DoH proxy"
-            connectedProfile = null
-            Log.e(TAG, "Failed to start DoH proxy: $error")
-            Result.failure(Exception(error))
-        }
-    }
-
-    /**
      * Start SlipstreamSocksBridge — a middleman SOCKS5 proxy for Slipstream non-SSH.
      * Chains CONNECT to Slipstream's SOCKS5 and handles FWD_UDP (DNS/UDP) directly.
      */
@@ -270,87 +236,6 @@ class VpnRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Start NaiveSocksBridge — a middleman SOCKS5 proxy for standalone NaiveProxy.
-     * Chains CONNECT to NaiveProxy's SOCKS5 (NO_AUTH) and handles FWD_UDP (DNS) via worker pool.
-     */
-    suspend fun startNaiveSocksBridge(
-        naivePort: Int,
-        naiveHost: String,
-        bridgePort: Int,
-        bridgeHost: String,
-        dnsServer: String? = null,
-        dnsFallback: String? = null
-    ): Result<Unit> = withContext(Dispatchers.IO) {
-        val result = NaiveSocksBridge.start(
-            naivePort = naivePort,
-            naiveHost = naiveHost,
-            listenPort = bridgePort,
-            listenHost = bridgeHost,
-            dnsServer = dnsServer,
-            dnsFallback = dnsFallback
-        )
-        if (result.isSuccess) {
-            Log.i(TAG, "NaiveSocksBridge started on $bridgeHost:$bridgePort -> $naiveHost:$naivePort")
-        } else {
-            Log.e(TAG, "Failed to start NaiveSocksBridge: ${result.exceptionOrNull()?.message}")
-        }
-        result
-    }
-
-    /**
-     * Start the Snowflake proxy stack: Snowflake PT + Tor + TorSocksBridge.
-     * Call this AFTER establishing the VPN interface.
-     *
-     * Port allocation:
-     * - bridgePort (proxyPort): TorSocksBridge (what hev-socks5-tunnel connects to)
-     * - torSocksPort (proxyPort+1): Tor SOCKS5 (what bridge chains CONNECT to)
-     * - snowflakePtPort (proxyPort+2): Snowflake PT SOCKS5 (what Tor connects through)
-     */
-    suspend fun startSnowflakeProxy(
-        profile: ServerProfile,
-        snowflakePtPort: Int,
-        torSocksPort: Int,
-        bridgePort: Int
-    ): Result<Unit> = withContext(Dispatchers.IO) {
-        connectedProfile = profile
-        val proxyHost = preferencesDataStore.proxyListenAddress.first()
-
-        // Step 1: Start Snowflake PT + Tor (or other PT based on bridge lines)
-        val sfResult = SnowflakeBridge.startClient(
-            context = context,
-            snowflakePort = snowflakePtPort,
-            torSocksPort = torSocksPort,
-            listenHost = proxyHost,
-            bridgeLines = profile.torBridgeLines
-        )
-
-        if (sfResult.isFailure) {
-            connectedProfile = null
-            Log.e(TAG, "Failed to start Snowflake + Tor: ${sfResult.exceptionOrNull()?.message}")
-            return@withContext Result.failure(sfResult.exceptionOrNull() ?: Exception("Failed to start Snowflake"))
-        }
-
-        // Step 2: Start TorSocksBridge
-        val bridgeResult = TorSocksBridge.start(
-            torSocksPort = torSocksPort,
-            torHost = proxyHost,
-            listenPort = bridgePort,
-            listenHost = proxyHost
-        )
-
-        if (bridgeResult.isFailure) {
-            SnowflakeBridge.stopClient()
-            connectedProfile = null
-            Log.e(TAG, "Failed to start TorSocksBridge: ${bridgeResult.exceptionOrNull()?.message}")
-            return@withContext Result.failure(bridgeResult.exceptionOrNull() ?: Exception("Failed to start TorSocksBridge"))
-        }
-
-        currentTunnelType = TunnelType.SNOWFLAKE
-        Log.i(TAG, "Snowflake proxy stack started successfully")
-        Result.success(Unit)
-    }
-
-    /**
      * Start hev-socks5-tunnel after the VPN interface is established.
      * Call this AFTER startSlipstreamProxy() succeeds and VPN interface is established.
      *
@@ -368,9 +253,8 @@ class VpnRepositoryImpl @Inject constructor(
         val disableQuic = preferencesDataStore.disableQuic.first()
         // All tunnel types use local bridges that handle Dante auth:
         // DNSTT: DnsttSocksBridge handles auth
-        // SSH/DNSTT_SSH/SLIPSTREAM_SSH: SSH handles auth, local SOCKS5 is no-auth
+        // DNSTT_SSH/SLIPSTREAM_SSH: SSH handles auth, local SOCKS5 is no-auth
         // SLIPSTREAM: SlipstreamSocksBridge handles auth
-        // DOH: DohBridge is no-auth
         val useAuth = false
         val enableUdpTunneling = true
         val socksUsername = if (useAuth) profile.socksUsername else null
@@ -386,9 +270,8 @@ class VpnRepositoryImpl @Inject constructor(
 
         // Reject non-DNS UDP at TUN level with ICMP Port Unreachable so apps
         // (e.g. WhatsApp) fall back to TCP instantly instead of waiting for
-        // silent-drop timeouts. DOH is excluded because DohBridge forwards
-        // non-DNS UDP directly via DatagramSocket.
-        val rejectNonDnsUdp = profile.tunnelType != TunnelType.DOH
+        // silent-drop timeouts.
+        val rejectNonDnsUdp = true
 
         val hevResult = HevSocks5Tunnel.start(
             tunFd = pfd,
@@ -433,10 +316,6 @@ class VpnRepositoryImpl @Inject constructor(
                 DnsttBridge.stopClient()
                 DnsDoHProxy.stop()
             }
-            TunnelType.SSH -> {
-                Log.d(TAG, "Stopping SSH proxy")
-                SshTunnelBridge.stop()
-            }
             TunnelType.DNSTT_SSH -> {
                 Log.d(TAG, "Stopping DNSTT+SSH: SSH first, then DNSTT")
                 SshTunnelBridge.stop()
@@ -448,37 +327,15 @@ class VpnRepositoryImpl @Inject constructor(
                 SshTunnelBridge.stop()
                 SlipstreamBridge.stopClient()
             }
-            TunnelType.DOH -> {
-                Log.d(TAG, "Stopping DoH proxy")
-                DohBridge.stop()
-            }
-            TunnelType.SNOWFLAKE -> {
-                Log.d(TAG, "Stopping Snowflake: TorSocksBridge first, then Snowflake+Tor")
-                TorSocksBridge.stop()
-                SnowflakeBridge.stopClient()
-            }
-            TunnelType.NAIVE_SSH -> {
-                Log.d(TAG, "Stopping NaiveProxy+SSH: SSH first, then NaiveProxy")
-                SshTunnelBridge.stop()
-                NaiveBridge.stop()
-            }
-            TunnelType.NAIVE -> {
-                Log.d(TAG, "Stopping standalone NaiveProxy: bridge first, then NaiveProxy")
-                NaiveSocksBridge.stop()
-                NaiveBridge.stop()
-            }
             null -> {
                 // Try to stop all just in case
                 Log.d(TAG, "No tunnel type set, stopping all proxies")
                 SlipstreamSocksBridge.stop()
                 SlipstreamBridge.stopClient()
+                DnsttSocksBridge.stop()
                 DnsttBridge.stopClient()
                 SshTunnelBridge.stop()
                 DnsDoHProxy.stop()
-                TorSocksBridge.stop()
-                SnowflakeBridge.stopClient()
-                NaiveSocksBridge.stop()
-                NaiveBridge.stop()
             }
         }
         currentTunnelType = null

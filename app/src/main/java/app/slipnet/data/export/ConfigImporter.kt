@@ -306,11 +306,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -338,7 +334,7 @@ class ConfigImporter @Inject constructor() {
 
         // SSH-only profiles don't need resolvers
         val resolvers = parseResolvers(resolversStr)
-        if (resolvers.isEmpty() && tunnelType != TunnelType.SSH && tunnelType != TunnelType.DOH) {
+        if (resolvers.isEmpty()) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
 
@@ -386,11 +382,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -421,7 +413,7 @@ class ConfigImporter @Inject constructor() {
 
         // SSH-only profiles don't need resolvers
         val resolvers = parseResolvers(resolversStr)
-        if (resolvers.isEmpty() && tunnelType != TunnelType.SSH && tunnelType != TunnelType.DOH) {
+        if (resolvers.isEmpty()) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
 
@@ -471,11 +463,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -508,7 +496,7 @@ class ConfigImporter @Inject constructor() {
 
         // SSH-only profiles don't need resolvers
         val resolvers = parseResolvers(resolversStr)
-        if (resolvers.isEmpty() && tunnelType != TunnelType.SSH && tunnelType != TunnelType.DOH) {
+        if (resolvers.isEmpty()) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
 
@@ -559,11 +547,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -597,7 +581,7 @@ class ConfigImporter @Inject constructor() {
 
         // SSH-only profiles don't need resolvers
         val resolvers = parseResolvers(resolversStr)
-        if (resolvers.isEmpty() && tunnelType != TunnelType.SSH && tunnelType != TunnelType.DOH) {
+        if (resolvers.isEmpty()) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
 
@@ -659,11 +643,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -697,7 +677,7 @@ class ConfigImporter @Inject constructor() {
 
         // SSH-only profiles don't need resolvers
         val resolvers = parseResolvers(resolversStr)
-        if (resolvers.isEmpty() && tunnelType != TunnelType.SSH && tunnelType != TunnelType.DOH) {
+        if (resolvers.isEmpty()) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
 
@@ -759,11 +739,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -795,7 +771,7 @@ class ConfigImporter @Inject constructor() {
         }
 
         val resolvers = parseResolvers(resolversStr)
-        if (resolvers.isEmpty() && tunnelType != TunnelType.SSH && tunnelType != TunnelType.DOH) {
+        if (resolvers.isEmpty()) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
 
@@ -810,7 +786,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH || tunnelType == TunnelType.SSH || tunnelType == TunnelType.NAIVE_SSH) {
+        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH) {
             if (sshUsername.isBlank()) {
                 return ProfileParseResult.Error("Line $lineNum: ${tunnelType.displayName} profiles require SSH username")
             }
@@ -855,11 +831,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -882,17 +854,17 @@ class ConfigImporter @Inject constructor() {
         val sshPort = fields[17].toIntOrNull() ?: 22
         val sshHost = fields[19]
         // fields[20] was useServerDns — ignored (removed, now global setting)
-        val dohUrl = fields[21]
+        // fields[21] was dohUrl — ignored (removed)
 
         if (name.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Profile name is required")
         }
-        if (tunnelType != TunnelType.DOH && tunnelType != TunnelType.SNOWFLAKE && domain.isBlank()) {
+        if (domain.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Domain is required")
         }
 
         val resolvers = parseResolvers(resolversStr)
-        if (resolvers.isEmpty() && tunnelType != TunnelType.SSH && tunnelType != TunnelType.DOH && tunnelType != TunnelType.SNOWFLAKE) {
+        if (resolvers.isEmpty()) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
 
@@ -907,7 +879,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH || tunnelType == TunnelType.SSH || tunnelType == TunnelType.NAIVE_SSH) {
+        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH) {
             if (sshUsername.isBlank()) {
                 return ProfileParseResult.Error("Line $lineNum: ${tunnelType.displayName} profiles require SSH username")
             }
@@ -916,14 +888,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        if (tunnelType == TunnelType.DOH) {
-            if (dohUrl.isBlank()) {
-                return ProfileParseResult.Error("Line $lineNum: DOH profiles require a DoH server URL")
-            }
-            if (!dohUrl.startsWith("https://")) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL must start with https://")
-            }
-        }
+        // dohUrl validation removed — DOH tunnel type no longer exists
 
         val profile = ServerProfile(
             id = 0,
@@ -944,8 +909,7 @@ class ConfigImporter @Inject constructor() {
             sshUsername = sshUsername,
             sshPassword = sshPassword,
             sshPort = sshPort,
-            sshHost = sshHost,
-            dohUrl = dohUrl
+            sshHost = sshHost
         )
 
         return ProfileParseResult.Success(profile)
@@ -962,11 +926,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -989,21 +949,19 @@ class ConfigImporter @Inject constructor() {
         val sshPort = fields[17].toIntOrNull() ?: 22
         val sshHost = fields[19]
         // fields[20] was useServerDns — ignored (removed, now global setting)
-        val dohUrl = fields[21]
+        // fields[21] was dohUrl — ignored (removed)
         val dnsTransport = DnsTransport.fromValue(fields[22])
 
         if (name.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Profile name is required")
         }
-        if (tunnelType != TunnelType.DOH && tunnelType != TunnelType.SNOWFLAKE && domain.isBlank()) {
+        if (domain.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Domain is required")
         }
 
         val resolvers = parseResolvers(resolversStr)
         val isDnsttBased = tunnelType == TunnelType.DNSTT || tunnelType == TunnelType.DNSTT_SSH
-        val skipResolvers = tunnelType == TunnelType.SSH || tunnelType == TunnelType.DOH ||
-                tunnelType == TunnelType.SNOWFLAKE ||
-                (isDnsttBased && dnsTransport == DnsTransport.DOH)
+        val skipResolvers = isDnsttBased && dnsTransport == DnsTransport.DOH
         if (resolvers.isEmpty() && !skipResolvers) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
@@ -1019,7 +977,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH || tunnelType == TunnelType.SSH || tunnelType == TunnelType.NAIVE_SSH) {
+        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH) {
             if (sshUsername.isBlank()) {
                 return ProfileParseResult.Error("Line $lineNum: ${tunnelType.displayName} profiles require SSH username")
             }
@@ -1028,15 +986,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        val needsDohUrl = tunnelType == TunnelType.DOH || (isDnsttBased && dnsTransport == DnsTransport.DOH)
-        if (needsDohUrl) {
-            if (dohUrl.isBlank()) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL is required")
-            }
-            if (!dohUrl.startsWith("https://")) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL must start with https://")
-            }
-        }
+        // dohUrl validation removed — dohUrl field no longer exists
 
         val profile = ServerProfile(
             id = 0,
@@ -1058,7 +1008,6 @@ class ConfigImporter @Inject constructor() {
             sshPassword = sshPassword,
             sshPort = sshPort,
             sshHost = sshHost,
-            dohUrl = dohUrl,
             dnsTransport = dnsTransport
         )
 
@@ -1090,11 +1039,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -1117,7 +1062,7 @@ class ConfigImporter @Inject constructor() {
         val sshPort = fields[17].toIntOrNull() ?: 22
         val sshHost = fields[19]
         // fields[20] was useServerDns — ignored (removed, now global setting)
-        val dohUrl = fields[21]
+        // fields[21] was dohUrl — ignored (removed)
         val dnsTransport = DnsTransport.fromValue(fields[22])
         val sshAuthType = SshAuthType.fromValue(fields[23])
         val sshPrivateKey = try {
@@ -1130,15 +1075,13 @@ class ConfigImporter @Inject constructor() {
         if (name.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Profile name is required")
         }
-        if (tunnelType != TunnelType.DOH && tunnelType != TunnelType.SNOWFLAKE && domain.isBlank()) {
+        if (domain.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Domain is required")
         }
 
         val resolvers = parseResolvers(resolversStr)
         val isDnsttBased = tunnelType == TunnelType.DNSTT || tunnelType == TunnelType.DNSTT_SSH
-        val skipResolvers = tunnelType == TunnelType.SSH || tunnelType == TunnelType.DOH ||
-                tunnelType == TunnelType.SNOWFLAKE ||
-                (isDnsttBased && dnsTransport == DnsTransport.DOH)
+        val skipResolvers = isDnsttBased && dnsTransport == DnsTransport.DOH
         if (resolvers.isEmpty() && !skipResolvers) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
@@ -1154,7 +1097,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH || tunnelType == TunnelType.SSH || tunnelType == TunnelType.NAIVE_SSH) {
+        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH) {
             if (sshUsername.isBlank()) {
                 return ProfileParseResult.Error("Line $lineNum: ${tunnelType.displayName} profiles require SSH username")
             }
@@ -1166,15 +1109,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        val needsDohUrl = tunnelType == TunnelType.DOH || (isDnsttBased && dnsTransport == DnsTransport.DOH)
-        if (needsDohUrl) {
-            if (dohUrl.isBlank()) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL is required")
-            }
-            if (!dohUrl.startsWith("https://")) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL must start with https://")
-            }
-        }
+        // dohUrl validation removed — dohUrl field no longer exists
 
         val profile = ServerProfile(
             id = 0,
@@ -1196,7 +1131,6 @@ class ConfigImporter @Inject constructor() {
             sshPassword = sshPassword,
             sshPort = sshPort,
             sshHost = sshHost,
-            dohUrl = dohUrl,
             dnsTransport = dnsTransport,
             sshAuthType = sshAuthType,
             sshPrivateKey = sshPrivateKey,
@@ -1220,11 +1154,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -1247,7 +1177,7 @@ class ConfigImporter @Inject constructor() {
         val sshPort = fields[17].toIntOrNull() ?: 22
         val sshHost = fields[19]
         // fields[20] was useServerDns — ignored (removed, now global setting)
-        val dohUrl = fields[21]
+        // fields[21] was dohUrl — ignored (removed)
         val dnsTransport = DnsTransport.fromValue(fields[22])
         val sshAuthType = SshAuthType.fromValue(fields[23])
         val sshPrivateKey = try {
@@ -1257,23 +1187,18 @@ class ConfigImporter @Inject constructor() {
             String(Base64.decode(fields[25], Base64.NO_WRAP), Charsets.UTF_8)
         } catch (_: Exception) { "" }
 
-        // v12 new field: bridge lines (base64-encoded)
-        val torBridgeLines = try {
-            String(Base64.decode(fields[26], Base64.NO_WRAP), Charsets.UTF_8)
-        } catch (_: Exception) { "" }
+        // fields[26] was torBridgeLines — ignored (removed)
 
         if (name.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Profile name is required")
         }
-        if (tunnelType != TunnelType.DOH && tunnelType != TunnelType.SNOWFLAKE && domain.isBlank()) {
+        if (domain.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Domain is required")
         }
 
         val resolvers = parseResolvers(resolversStr)
         val isDnsttBased = tunnelType == TunnelType.DNSTT || tunnelType == TunnelType.DNSTT_SSH
-        val skipResolvers = tunnelType == TunnelType.SSH || tunnelType == TunnelType.DOH ||
-                tunnelType == TunnelType.SNOWFLAKE ||
-                (isDnsttBased && dnsTransport == DnsTransport.DOH)
+        val skipResolvers = isDnsttBased && dnsTransport == DnsTransport.DOH
         if (resolvers.isEmpty() && !skipResolvers) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
@@ -1289,7 +1214,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH || tunnelType == TunnelType.SSH || tunnelType == TunnelType.NAIVE_SSH) {
+        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH) {
             if (sshUsername.isBlank()) {
                 return ProfileParseResult.Error("Line $lineNum: ${tunnelType.displayName} profiles require SSH username")
             }
@@ -1301,15 +1226,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        val needsDohUrl = tunnelType == TunnelType.DOH || (isDnsttBased && dnsTransport == DnsTransport.DOH)
-        if (needsDohUrl) {
-            if (dohUrl.isBlank()) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL is required")
-            }
-            if (!dohUrl.startsWith("https://")) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL must start with https://")
-            }
-        }
+        // dohUrl validation removed — dohUrl field no longer exists
 
         val profile = ServerProfile(
             id = 0,
@@ -1331,12 +1248,10 @@ class ConfigImporter @Inject constructor() {
             sshPassword = sshPassword,
             sshPort = sshPort,
             sshHost = sshHost,
-            dohUrl = dohUrl,
             dnsTransport = dnsTransport,
             sshAuthType = sshAuthType,
             sshPrivateKey = sshPrivateKey,
-            sshKeyPassphrase = sshKeyPassphrase,
-            torBridgeLines = torBridgeLines
+            sshKeyPassphrase = sshKeyPassphrase
         )
 
         return ProfileParseResult.Success(profile)
@@ -1357,11 +1272,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -1384,7 +1295,7 @@ class ConfigImporter @Inject constructor() {
         val sshPort = fields[17].toIntOrNull() ?: 22
         val sshHost = fields[19]
         // fields[20] was useServerDns — ignored (removed, now global setting)
-        val dohUrl = fields[21]
+        // fields[21] was dohUrl — ignored (removed)
         val dnsTransport = DnsTransport.fromValue(fields[22])
         val sshAuthType = SshAuthType.fromValue(fields[23])
         val sshPrivateKey = try {
@@ -1393,9 +1304,7 @@ class ConfigImporter @Inject constructor() {
         val sshKeyPassphrase = try {
             String(Base64.decode(fields[25], Base64.NO_WRAP), Charsets.UTF_8)
         } catch (_: Exception) { "" }
-        val torBridgeLines = try {
-            String(Base64.decode(fields[26], Base64.NO_WRAP), Charsets.UTF_8)
-        } catch (_: Exception) { "" }
+        // fields[26] was torBridgeLines — ignored (removed)
 
         // v13 new field: DNSTT authoritative mode
         val dnsttAuthoritative = fields[27] == "1"
@@ -1403,15 +1312,13 @@ class ConfigImporter @Inject constructor() {
         if (name.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Profile name is required")
         }
-        if (tunnelType != TunnelType.DOH && tunnelType != TunnelType.SNOWFLAKE && domain.isBlank()) {
+        if (domain.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Domain is required")
         }
 
         val resolvers = parseResolvers(resolversStr)
         val isDnsttBased = tunnelType == TunnelType.DNSTT || tunnelType == TunnelType.DNSTT_SSH
-        val skipResolvers = tunnelType == TunnelType.SSH || tunnelType == TunnelType.DOH ||
-                tunnelType == TunnelType.SNOWFLAKE ||
-                (isDnsttBased && dnsTransport == DnsTransport.DOH)
+        val skipResolvers = isDnsttBased && dnsTransport == DnsTransport.DOH
         if (resolvers.isEmpty() && !skipResolvers) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
@@ -1427,7 +1334,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH || tunnelType == TunnelType.SSH || tunnelType == TunnelType.NAIVE_SSH) {
+        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH) {
             if (sshUsername.isBlank()) {
                 return ProfileParseResult.Error("Line $lineNum: ${tunnelType.displayName} profiles require SSH username")
             }
@@ -1439,15 +1346,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        val needsDohUrl = tunnelType == TunnelType.DOH || (isDnsttBased && dnsTransport == DnsTransport.DOH)
-        if (needsDohUrl) {
-            if (dohUrl.isBlank()) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL is required")
-            }
-            if (!dohUrl.startsWith("https://")) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL must start with https://")
-            }
-        }
+        // dohUrl validation removed — dohUrl field no longer exists
 
         val profile = ServerProfile(
             id = 0,
@@ -1469,12 +1368,10 @@ class ConfigImporter @Inject constructor() {
             sshPassword = sshPassword,
             sshPort = sshPort,
             sshHost = sshHost,
-            dohUrl = dohUrl,
             dnsTransport = dnsTransport,
             sshAuthType = sshAuthType,
             sshPrivateKey = sshPrivateKey,
             sshKeyPassphrase = sshKeyPassphrase,
-            torBridgeLines = torBridgeLines,
             dnsttAuthoritative = dnsttAuthoritative
         )
 
@@ -1495,11 +1392,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -1522,7 +1415,7 @@ class ConfigImporter @Inject constructor() {
         val sshPort = fields[17].toIntOrNull() ?: 22
         val sshHost = fields[19]
         // fields[20] was useServerDns — ignored (removed, now global setting)
-        val dohUrl = fields[21]
+        // fields[21] was dohUrl — ignored (removed)
         val dnsTransport = DnsTransport.fromValue(fields[22])
         val sshAuthType = SshAuthType.fromValue(fields[23])
         val sshPrivateKey = try {
@@ -1531,32 +1424,21 @@ class ConfigImporter @Inject constructor() {
         val sshKeyPassphrase = try {
             String(Base64.decode(fields[25], Base64.NO_WRAP), Charsets.UTF_8)
         } catch (_: Exception) { "" }
-        val torBridgeLines = try {
-            String(Base64.decode(fields[26], Base64.NO_WRAP), Charsets.UTF_8)
-        } catch (_: Exception) { "" }
+        // fields[26] was torBridgeLines — ignored (removed)
         val dnsttAuthoritative = fields[27] == "1"
 
-        // v14 new fields: NaiveProxy
-        val naivePort = fields[28].toIntOrNull() ?: 443
-        val naiveUsername = fields[29]
-        val naivePassword = try {
-            String(Base64.decode(fields[30], Base64.NO_WRAP), Charsets.UTF_8)
-        } catch (_: Exception) { "" }
-        // fields[31] was naiveSni (removed) — ignored if present
+        // fields[28-30] were naivePort, naiveUsername, naivePassword — ignored (removed)
 
         if (name.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Profile name is required")
         }
-        if (tunnelType != TunnelType.DOH && tunnelType != TunnelType.SNOWFLAKE && domain.isBlank()) {
+        if (domain.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Domain is required")
         }
 
         val resolvers = parseResolvers(resolversStr)
         val isDnsttBased = tunnelType == TunnelType.DNSTT || tunnelType == TunnelType.DNSTT_SSH
-        val skipResolvers = tunnelType == TunnelType.SSH || tunnelType == TunnelType.DOH ||
-                tunnelType == TunnelType.SNOWFLAKE || tunnelType == TunnelType.NAIVE_SSH ||
-                tunnelType == TunnelType.NAIVE ||
-                (isDnsttBased && dnsTransport == DnsTransport.DOH)
+        val skipResolvers = isDnsttBased && dnsTransport == DnsTransport.DOH
         if (resolvers.isEmpty() && !skipResolvers) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
@@ -1572,7 +1454,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH || tunnelType == TunnelType.SSH || tunnelType == TunnelType.NAIVE_SSH) {
+        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH) {
             if (sshUsername.isBlank()) {
                 return ProfileParseResult.Error("Line $lineNum: ${tunnelType.displayName} profiles require SSH username")
             }
@@ -1584,25 +1466,9 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        val needsDohUrl = tunnelType == TunnelType.DOH || (isDnsttBased && dnsTransport == DnsTransport.DOH)
-        if (needsDohUrl) {
-            if (dohUrl.isBlank()) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL is required")
-            }
-            if (!dohUrl.startsWith("https://")) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL must start with https://")
-            }
-        }
+        // dohUrl validation removed — dohUrl field no longer exists
 
-        // NaiveProxy validation
-        if (tunnelType == TunnelType.NAIVE_SSH || tunnelType == TunnelType.NAIVE) {
-            if (naiveUsername.isBlank()) {
-                return ProfileParseResult.Error("Line $lineNum: NaiveProxy profiles require proxy username")
-            }
-            if (naivePassword.isBlank()) {
-                return ProfileParseResult.Error("Line $lineNum: NaiveProxy profiles require proxy password")
-            }
-        }
+        // NaiveProxy validation removed — NAIVE tunnel types no longer exist
 
         val profile = ServerProfile(
             id = 0,
@@ -1624,16 +1490,11 @@ class ConfigImporter @Inject constructor() {
             sshPassword = sshPassword,
             sshPort = sshPort,
             sshHost = sshHost,
-            dohUrl = dohUrl,
             dnsTransport = dnsTransport,
             sshAuthType = sshAuthType,
             sshPrivateKey = sshPrivateKey,
             sshKeyPassphrase = sshKeyPassphrase,
-            torBridgeLines = torBridgeLines,
-            dnsttAuthoritative = dnsttAuthoritative,
-            naivePort = naivePort,
-            naiveUsername = naiveUsername,
-            naivePassword = naivePassword
+            dnsttAuthoritative = dnsttAuthoritative
         )
 
         return ProfileParseResult.Success(profile)
@@ -1650,11 +1511,7 @@ class ConfigImporter @Inject constructor() {
             MODE_SLIPSTREAM_SSH -> TunnelType.SLIPSTREAM_SSH
             MODE_DNSTT -> TunnelType.DNSTT
             MODE_DNSTT_SSH -> TunnelType.DNSTT_SSH
-            MODE_SSH -> TunnelType.SSH
-            MODE_DOH -> TunnelType.DOH
-            MODE_SNOWFLAKE -> TunnelType.SNOWFLAKE
-            MODE_NAIVE_SSH -> TunnelType.NAIVE_SSH
-            MODE_NAIVE -> TunnelType.NAIVE
+            MODE_SSH, MODE_DOH, MODE_SNOWFLAKE, MODE_NAIVE_SSH, MODE_NAIVE -> TunnelType.DNSTT // legacy fallback
             else -> {
                 return ProfileParseResult.Warning("Line $lineNum: Unsupported tunnel type '$tunnelTypeStr', skipping")
             }
@@ -1677,7 +1534,7 @@ class ConfigImporter @Inject constructor() {
         val sshPort = fields[17].toIntOrNull() ?: 22
         val sshHost = fields[19]
         // fields[20] was useServerDns — ignored
-        val dohUrl = fields[21]
+        // fields[21] was dohUrl — ignored (removed)
         val dnsTransport = DnsTransport.fromValue(fields[22])
         val sshAuthType = SshAuthType.fromValue(fields[23])
         val sshPrivateKey = try {
@@ -1686,15 +1543,9 @@ class ConfigImporter @Inject constructor() {
         val sshKeyPassphrase = try {
             String(Base64.decode(fields[25], Base64.NO_WRAP), Charsets.UTF_8)
         } catch (_: Exception) { "" }
-        val torBridgeLines = try {
-            String(Base64.decode(fields[26], Base64.NO_WRAP), Charsets.UTF_8)
-        } catch (_: Exception) { "" }
+        // fields[26] was torBridgeLines — ignored (removed)
         val dnsttAuthoritative = fields[27] == "1"
-        val naivePort = fields[28].toIntOrNull() ?: 443
-        val naiveUsername = fields[29]
-        val naivePassword = try {
-            String(Base64.decode(fields[30], Base64.NO_WRAP), Charsets.UTF_8)
-        } catch (_: Exception) { "" }
+        // fields[28-30] were naivePort, naiveUsername, naivePassword — ignored (removed)
 
         // v15 new fields: locked profile
         val isLocked = fields[31] == "1"
@@ -1703,16 +1554,13 @@ class ConfigImporter @Inject constructor() {
         if (name.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Profile name is required")
         }
-        if (tunnelType != TunnelType.DOH && tunnelType != TunnelType.SNOWFLAKE && domain.isBlank()) {
+        if (domain.isBlank()) {
             return ProfileParseResult.Error("Line $lineNum: Domain is required")
         }
 
         val resolvers = parseResolvers(resolversStr)
         val isDnsttBased = tunnelType == TunnelType.DNSTT || tunnelType == TunnelType.DNSTT_SSH
-        val skipResolvers = tunnelType == TunnelType.SSH || tunnelType == TunnelType.DOH ||
-                tunnelType == TunnelType.SNOWFLAKE || tunnelType == TunnelType.NAIVE_SSH ||
-                tunnelType == TunnelType.NAIVE ||
-                (isDnsttBased && dnsTransport == DnsTransport.DOH)
+        val skipResolvers = isDnsttBased && dnsTransport == DnsTransport.DOH
         if (resolvers.isEmpty() && !skipResolvers) {
             return ProfileParseResult.Error("Line $lineNum: At least one resolver is required")
         }
@@ -1728,7 +1576,7 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH || tunnelType == TunnelType.SSH || tunnelType == TunnelType.NAIVE_SSH) {
+        if (tunnelType == TunnelType.DNSTT_SSH || tunnelType == TunnelType.SLIPSTREAM_SSH) {
             if (sshUsername.isBlank()) {
                 return ProfileParseResult.Error("Line $lineNum: ${tunnelType.displayName} profiles require SSH username")
             }
@@ -1740,24 +1588,9 @@ class ConfigImporter @Inject constructor() {
             }
         }
 
-        val needsDohUrl = tunnelType == TunnelType.DOH || (isDnsttBased && dnsTransport == DnsTransport.DOH)
-        if (needsDohUrl) {
-            if (dohUrl.isBlank()) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL is required")
-            }
-            if (!dohUrl.startsWith("https://")) {
-                return ProfileParseResult.Error("Line $lineNum: DoH URL must start with https://")
-            }
-        }
+        // dohUrl validation removed — dohUrl field no longer exists
 
-        if (tunnelType == TunnelType.NAIVE_SSH || tunnelType == TunnelType.NAIVE) {
-            if (naiveUsername.isBlank()) {
-                return ProfileParseResult.Error("Line $lineNum: NaiveProxy profiles require proxy username")
-            }
-            if (naivePassword.isBlank()) {
-                return ProfileParseResult.Error("Line $lineNum: NaiveProxy profiles require proxy password")
-            }
-        }
+        // NaiveProxy validation removed — NAIVE tunnel types no longer exist
 
         val profile = ServerProfile(
             id = 0,
@@ -1779,16 +1612,11 @@ class ConfigImporter @Inject constructor() {
             sshPassword = sshPassword,
             sshPort = sshPort,
             sshHost = sshHost,
-            dohUrl = dohUrl,
             dnsTransport = dnsTransport,
             sshAuthType = sshAuthType,
             sshPrivateKey = sshPrivateKey,
             sshKeyPassphrase = sshKeyPassphrase,
-            torBridgeLines = torBridgeLines,
             dnsttAuthoritative = dnsttAuthoritative,
-            naivePort = naivePort,
-            naiveUsername = naiveUsername,
-            naivePassword = naivePassword,
             isLocked = isLocked,
             lockPasswordHash = lockPasswordHash
         )
